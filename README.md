@@ -23,7 +23,7 @@ The goal is to provide a clean, scriptable foundation for automation without tur
 - Sanity check API connectivity
 - Clean CLI built with Typer
 - Pretty terminal output via Rich
-- Configuration via `.env`
+- Configuration via environment variables
 
 ---
 
@@ -43,16 +43,26 @@ brew install uv
 
 ## Setup
 
-Clone or create the project directory, then:
+From the project directory:
 
 ```bash
-uv init
-uv venv
-source .venv/bin/activate
-uv add typer rich httpx pydantic-settings python-dotenv
+uv sync
 ```
 
-Create a `.env` file:
+Optional (to run `glamtool` without `uv run` in the current shell):
+
+```bash
+source .venv/bin/activate
+```
+
+Set real environment variables (recommended), e.g. in your shell profile:
+
+```bash
+export GHOST_URL="https://your-site.com"
+export GHOST_CONTENT_KEY="YOUR_CONTENT_API_KEY"
+```
+
+Optional: use a `.env` file and pass it explicitly:
 
 ```env
 GHOST_URL="https://your-site.com"
@@ -70,13 +80,19 @@ Settings → Integrations → Custom Integration
 From the project root:
 
 ```bash
-uv run python -m glamtool.cli <command>
+uv run glamtool <command>
 ```
 
-or if the virtual environment is activated:
+or if the virtual environment is activated and the package is installed:
 
 ```bash
-python -m glamtool.cli <command>
+glamtool <command>
+```
+
+If you use a dotenv file, pass it explicitly:
+
+```bash
+glamtool --env-file /path/to/.env <command>
 ```
 
 ---
@@ -88,12 +104,12 @@ python -m glamtool.cli <command>
 Test connectivity to the Ghost Content API.
 
 ```bash
-python -m glamtool.cli sanity
+glamtool sanity
 ```
 
 Confirms:
 
-- `.env` is loaded
+- environment variables are set and valid
 - API key works
 - Ghost is reachable
 
@@ -104,7 +120,7 @@ Confirms:
 List posts with flexible filtering.
 
 ```bash
-python -m glamtool.cli posts
+glamtool posts
 ```
 
 Options:
@@ -123,31 +139,31 @@ Examples:
 Show published Song Picks:
 
 ```bash
-python -m glamtool.cli posts --tag song-pick
+glamtool posts --tag song-pick
 ```
 
 Require multiple tags (AND):
 
 ```bash
-python -m glamtool.cli posts --tag song-pick --tag 2026
+glamtool posts --tag song-pick --tag 2026
 ```
 
 Match any of multiple tags (OR):
 
 ```bash
-python -m glamtool.cli posts --tag song-pick --tag review --any-tag
+glamtool posts --tag song-pick --tag review --any-tag
 ```
 
 Use raw filter:
 
 ```bash
-python -m glamtool.cli posts --filter 'title:~"Olympics"'
+glamtool posts --filter 'title:~"Olympics"'
 ```
 
 Combine:
 
 ```bash
-python -m glamtool.cli posts --tag song-pick --filter 'title:~"London"'
+glamtool posts --tag song-pick --filter 'title:~"London"'
 ```
 
 ---
@@ -157,7 +173,7 @@ python -m glamtool.cli posts --tag song-pick --filter 'title:~"London"'
 Export posts to CSV.
 
 ```bash
-python -m glamtool.cli export-posts
+glamtool export-posts
 ```
 
 Options:
@@ -173,7 +189,7 @@ Options:
 Example:
 
 ```bash
-python -m glamtool.cli export-posts --tag song-pick --out exports/song_picks.csv
+glamtool export-posts --tag song-pick --out exports/song_picks.csv
 ```
 
 ---

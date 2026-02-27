@@ -5,18 +5,48 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from .config import settings
+from .config import load_settings
 from .ghost import GhostContentClient
 
 app = typer.Typer(add_completion=False, help="Maintenance utilities for Ghost + APIs.")
 console = Console()
 
 
-def ghost_client() -> GhostContentClient:
+def resolve_settings(ctx: typer.Context):
+    env_file = None
+    if ctx.obj:
+        env_file = ctx.obj.get("env_file")
+    try:
+        return load_settings(env_file=env_file)
+    except ValidationError:
+        console.print(
+            "[red]❌ Missing configuration.[/red] "
+            "Set `GHOST_URL` and `GHOST_CONTENT_KEY` as environment variables. "
+            "Or pass `--env-file /path/to/.env`."
+        )
+        raise typer.Exit(code=2)
+
+
+def ghost_client(ctx: typer.Context) -> GhostContentClient:
+    settings = resolve_settings(ctx)
     return GhostContentClient(settings.ghost_url, settings.ghost_content_key)
+
+
+@app.callback()
+def app_options(
+    ctx: typer.Context,
+    env_file: Optional[Path] = typer.Option(
+        None,
+        "--env-file",
+        help="Optional path to a .env file. By default, only environment variables are used.",
+    ),
+):
+    ctx.obj = {"env_file": env_file}
+
 
 def build_filter(
     published_only: bool,
@@ -58,6 +88,7 @@ def build_filter(
 
 @app.command()
 def posts(
+    ctx: typer.Context,
     limit: int = typer.Option(15, help="Number of posts to show (max 100)."),
     published_only: bool = typer.Option(True, help="Show only published posts."),
     missing_images_only: bool = typer.Option(False, help="Only posts without feature_image."),
@@ -78,7 +109,7 @@ def posts(
     """
     List Ghost posts with powerful filtering (tags, raw filter, etc.).
     """
-    client = ghost_client()
+    client = ghost_client(ctx)
 
     filter_ = build_filter(
         published_only=published_only,
@@ -111,6 +142,7 @@ def posts(
 
 @app.command()
 def export_posts(
+    ctx: typer.Context,
     out: Path = typer.Option(Path("posts_export.csv"), help="CSV output path."),
     published_only: bool = typer.Option(True, help="Export only published posts."),
     tag: Optional[list[str]] = typer.Option(
@@ -130,7 +162,7 @@ def export_posts(
     """
     Export posts to CSV with the same filtering options as 'posts'.
     """
-    client = ghost_client()
+    client = ghost_client(ctx)
 
     filter_ = build_filter(
         published_only=published_only,
@@ -156,11 +188,11 @@ def export_posts(
 
 
 @app.command()
-def sanity():
+def sanity(ctx: typer.Context):
     """
     Quick config + connectivity check.
     """
-    client = ghost_client()
+    client = ghost_client(ctx)
     try:
         items = client.list_posts(limit=1)
     except Exception as e:
