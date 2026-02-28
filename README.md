@@ -181,6 +181,7 @@ Options:
 | Option             | Description                 |
 | ------------------ | --------------------------- |
 | `--out PATH`       | Output CSV path             |
+| `--smart`          | Spreadsheet-friendly dates + parsed `artist` / `song_title` columns |
 | `--published-only` | Export only published posts |
 | `--tag TAG`        | Filter by tag               |
 | `--any-tag`        | Match ANY tag               |
@@ -190,6 +191,12 @@ Example:
 
 ```bash
 glamtool export-posts --tag song-pick --out exports/song_picks.csv
+```
+
+Smart mode example:
+
+```bash
+glamtool export-posts --smart --tag song-pick --out exports/song_picks_smart.csv
 ```
 
 ---

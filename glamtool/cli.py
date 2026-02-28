@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +16,8 @@ from .ghost import GhostContentClient
 
 app = typer.Typer(add_completion=False, help="Maintenance utilities for Ghost + APIs.")
 console = Console()
+SONG_SEPARATOR_RE = re.compile(r"(?:\s+[-–—]\s*|\s*[-–—]\s+)")
+SONG_TITLE_RE = re.compile(r"^\s*(?P<artist>.+?)(?:\s+[-–—]\s*|\s*[-–—]\s+)(?P<song>.+?)\s*$")
 
 
 def resolve_settings(ctx: typer.Context):
@@ -86,6 +90,61 @@ def build_filter(
     return "+".join([p for p in parts if p]) or None
 
 
+def format_datetime_for_sheet(value: Optional[str]) -> Optional[str]:
+    """
+    Convert ISO-8601 timestamps from Ghost into a spreadsheet-friendly datetime string.
+    """
+    if not value:
+        return value
+
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        # Keep original value if it isn't parseable.
+        return value
+
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def extract_artist_song(title: str) -> tuple[str, str]:
+    """
+    Try to parse "Artist - Song" from post titles.
+    Supported extras:
+      - optional prefix ending with ":" before the artist/song section
+      - optional trailing bracket suffix, e.g. "[VIDEO]"
+    """
+    if not title:
+        return "", ""
+
+    # Normalize common invisible/non-breaking whitespace that appears in copied titles.
+    cleaned = title.replace("\u00A0", " ")
+    cleaned = re.sub(r"[\u200B-\u200D\uFEFF]", "", cleaned)
+    cleaned = re.sub(r"\s*\[[^\]]+\]\s*$", "", cleaned).strip()
+    if not cleaned:
+        return "", ""
+
+    # If a prefix exists before the song separator, drop it (e.g. "SONG PICK: ").
+    sep_match = SONG_SEPARATOR_RE.search(cleaned)
+    if sep_match:
+        colon_idx = cleaned.find(":")
+        if 0 <= colon_idx < sep_match.start():
+            cleaned = cleaned[colon_idx + 1 :].strip()
+
+    match = SONG_TITLE_RE.match(cleaned)
+    if not match:
+        return "", ""
+
+    artist = match.group("artist").strip()
+    song = match.group("song").strip()
+    if not artist or not song:
+        return "", ""
+    return artist, song
+
+
 @app.command()
 def posts(
     ctx: typer.Context,
@@ -144,6 +203,14 @@ def posts(
 def export_posts(
     ctx: typer.Context,
     out: Path = typer.Option(Path("posts_export.csv"), help="CSV output path."),
+    smart: bool = typer.Option(
+        False,
+        "--smart",
+        help=(
+            "Enable spreadsheet-friendly export: normalize published date and "
+            "add parsed artist/song_title columns when detectable."
+        ),
+    ),
     published_only: bool = typer.Option(True, help="Export only published posts."),
     tag: Optional[list[str]] = typer.Option(
         None,
@@ -178,9 +245,18 @@ def export_posts(
 
     with out.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["id", "title", "status", "published_at", "url", "feature_image", "slug"])
+        base_header = ["id", "title", "published_at", "url", "feature_image", "slug"]
+        if smart:
+            w.writerow(base_header + ["artist", "song_title"])
+        else:
+            w.writerow(base_header)
         for p in posts:
-            w.writerow([p.id, p.title, p.status, p.published_at, p.url, p.feature_image, p.slug])
+            published_at = format_datetime_for_sheet(p.published_at) if smart else p.published_at
+            row = [p.id, p.title, published_at, p.url, p.feature_image, p.slug]
+            if smart:
+                artist, song_title = extract_artist_song(p.title or "")
+                row.extend([artist, song_title])
+            w.writerow(row)
 
     console.print(f"✅ Exported {len(posts)} posts to {out}")
     if filter_:
