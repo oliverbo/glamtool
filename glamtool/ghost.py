@@ -15,6 +15,7 @@ class GhostPost:
     url: Optional[str]
     feature_image: Optional[str]
     slug: Optional[str]
+    html: Optional[str] = None
 
 
 class GhostContentClient:
@@ -68,6 +69,7 @@ class GhostContentClient:
                     url=p.get("url"),
                     feature_image=p.get("feature_image"),
                     slug=p.get("slug"),
+                    html=p.get("html"),
                 )
             )
         return out
