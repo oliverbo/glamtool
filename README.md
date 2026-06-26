@@ -199,18 +199,18 @@ Options:
 | `--filter "..."`   | Raw Ghost filter                                 |
 | `--start-date DATE`| Include posts on or after `YYYY-MM-DD`           |
 | `--end-date DATE`  | Include posts on or before `YYYY-MM-DD`          |
-| `--week DATE`      | Monday-Sunday week containing `YYYY-MM-DD`       |
+| `--week DATE`      | Seven days starting with `YYYY-MM-DD`            |
 
 Full post export:
 
 ```bash
-python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-25 --format post --out exports/song_picks.md
+python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-18 --format post --out exports/song_picks.md
 ```
 
 Linked header list:
 
 ```bash
-python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-25 --format header
+python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-18 --format header
 ```
 
 The `post` format writes each title as a level-two heading and converts Ghost HTML content to Markdown. YouTube embeds are emitted as plain links.

@@ -136,7 +136,7 @@ def build_published_at_filter(
     if week:
         week_date = parse_date_option(week, "--week")
         if week_date is not None:
-            start = week_date - timedelta(days=week_date.weekday())
+            start = week_date
             end = start + timedelta(days=6)
 
     if start and end and start > end:
@@ -253,7 +253,8 @@ def render_markdown_posts(posts, format_: MarkdownFormat) -> str:
         else:
             body = html_to_markdown(post.html)
             blocks.append(f"## {title}\n\n{body}".rstrip())
-    return "\n\n".join(blocks).strip() + ("\n" if blocks else "")
+    separator = "\n" if format_ == MarkdownFormat.header else "\n\n"
+    return separator.join(blocks).strip() + ("\n" if blocks else "")
 
 
 @app.command()
@@ -394,7 +395,7 @@ def export_markdown(
     week: Optional[str] = typer.Option(
         None,
         "--week",
-        help="Shortcut for the Monday-Sunday week containing this date (YYYY-MM-DD).",
+        help="Shortcut for seven days starting with this date (YYYY-MM-DD).",
     ),
 ):
     """
@@ -412,7 +413,11 @@ def export_markdown(
     date_filter = build_published_at_filter(start_date=start_date, end_date=end_date, week=week)
     filter_ = combine_filters(base_filter, date_filter)
 
-    posts = client.paginate_posts(filter_=filter_, fields=MARKDOWN_POST_FIELDS)
+    posts = client.paginate_posts(
+        filter_=filter_,
+        fields=MARKDOWN_POST_FIELDS,
+        order="published_at asc",
+    )
     markdown = render_markdown_posts(posts, format_)
 
     if out:

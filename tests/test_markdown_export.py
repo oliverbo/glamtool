@@ -14,8 +14,8 @@ runner = CliRunner()
 
 def test_build_published_at_filter_for_week():
     assert (
-        cli.build_published_at_filter(start_date=None, end_date=None, week="2026-06-25")
-        == "published_at:>='2026-06-22'+published_at:<'2026-06-29'"
+        cli.build_published_at_filter(start_date=None, end_date=None, week="2026-06-18")
+        == "published_at:>='2026-06-18'+published_at:<'2026-06-25'"
     )
 
 
@@ -46,14 +46,25 @@ def test_export_markdown_header_writes_linked_titles_and_requests_html(monkeypat
             feature_image=None,
             slug="robyn",
             html="<p>Body</p>",
+        ),
+        GhostPost(
+            id="2",
+            title="Song Pick: MUNA - Number One Fan",
+            status="published",
+            published_at="2026-06-24T10:00:00Z",
+            url="https://example.com/muna",
+            feature_image=None,
+            slug="muna",
+            html="<p>Body</p>",
         )
     ]
     seen = {}
 
     class FakeClient:
-        def paginate_posts(self, filter_=None, fields=None):
+        def paginate_posts(self, filter_=None, fields=None, order=None):
             seen["filter"] = filter_
             seen["fields"] = fields
+            seen["order"] = order
             return posts
 
     monkeypatch.setattr(cli, "ghost_client", lambda: FakeClient())
@@ -68,15 +79,19 @@ def test_export_markdown_header_writes_linked_titles_and_requests_html(monkeypat
             "--tag",
             "song-pick",
             "--week",
-            "2026-06-25",
+            "2026-06-18",
             "--out",
             str(out),
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert out.read_text(encoding="utf-8") == "- [Song Pick: Robyn - Dancing On My Own](https://example.com/robyn)\n"
+    assert out.read_text(encoding="utf-8") == (
+        "- [Song Pick: Robyn - Dancing On My Own](https://example.com/robyn)\n"
+        "- [Song Pick: MUNA - Number One Fan](https://example.com/muna)\n"
+    )
     assert seen["fields"] == cli.MARKDOWN_POST_FIELDS
+    assert seen["order"] == "published_at asc"
     assert seen["filter"] == (
-        "status:published+tag:song-pick+published_at:>='2026-06-22'+published_at:<'2026-06-29'"
+        "status:published+tag:song-pick+published_at:>='2026-06-18'+published_at:<'2026-06-25'"
     )

@@ -39,6 +39,7 @@ class GhostContentClient:
         include: str = "authors,tags",
         fields: str = "id,title,status,published_at,url,feature_image,slug",
         filter_: Optional[str] = None,
+        order: Optional[str] = None,
         page: int = 1,
     ) -> List[GhostPost]:
         params: Dict[str, Any] = {
@@ -50,6 +51,8 @@ class GhostContentClient:
         }
         if filter_:
             params["filter"] = filter_
+        if order:
+            params["order"] = order
 
         url = self._endpoint("posts/")
         with httpx.Client(timeout=self.timeout_s) as client:
@@ -80,12 +83,18 @@ class GhostContentClient:
         include: str = "authors,tags",
         fields: str = "id,title,status,published_at,url,feature_image,slug",
         filter_: Optional[str] = None,
+        order: Optional[str] = None,
         max_pages: int = 50,
     ) -> List[GhostPost]:
         all_posts: List[GhostPost] = []
         for page in range(1, max_pages + 1):
             batch = self.list_posts(
-                limit=per_page, include=include, fields=fields, filter_=filter_, page=page
+                limit=per_page,
+                include=include,
+                fields=fields,
+                filter_=filter_,
+                order=order,
+                page=page,
             )
             if not batch:
                 break
