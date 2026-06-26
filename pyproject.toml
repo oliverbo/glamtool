@@ -11,3 +11,11 @@ dependencies = [
     "rich>=14.3.3",
     "typer>=0.24.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
