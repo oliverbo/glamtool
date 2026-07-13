@@ -21,6 +21,7 @@ The goal is to provide a clean, scriptable foundation for automation without tur
 - Combine structured filters with raw Ghost filter expressions
 - Export posts to CSV
 - Export posts to Markdown
+- Publish Markdown files as Ghost drafts
 - Sanity check API connectivity
 - Clean CLI built with Typer
 - Pretty terminal output via Rich
@@ -58,11 +59,15 @@ Create a `.env` file:
 ```env
 GHOST_URL="https://your-site.com"
 GHOST_CONTENT_KEY="YOUR_CONTENT_API_KEY"
+GHOST_ADMIN_KEY="YOUR_ADMIN_API_ID:YOUR_ADMIN_API_SECRET"
 ```
 
 You can generate a Content API key in Ghost Admin under:
 
 Settings → Integrations → Custom Integration
+
+The Admin API key is only required for the `publish` command. Keep it private: it can create
+and modify content in Ghost.
 
 ---
 
@@ -214,6 +219,53 @@ python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-18 --forma
 ```
 
 The `post` format writes each title as a level-two heading and converts Ghost HTML content to Markdown. YouTube embeds are emitted as plain links.
+
+---
+
+### publish
+
+Create a Ghost draft from a Markdown file:
+
+```bash
+python -m glamtool.cli publish drafts/new-post.md
+```
+
+The command always creates a draft. It never publishes a post directly. The first heading is
+used as the title and removed from the body. The first image is uploaded, used as the featured
+image, and removed from the body. Other local images are uploaded and their body URLs are
+rewritten to the Ghost URLs.
+
+Tags and authors can be supplied as YAML front matter. Ghost identifies authors by email:
+
+```markdown
+---
+tags:
+  - Reviews
+  - Music
+authors:
+  - editor@example.com
+audience: subscribers
+---
+
+# The post title
+
+![Featured image](images/cover.jpg)
+
+Hello, [%audience].
+
+/sections/intro.md
+Audience: new subscribers
+
+/images/chart.png "Chart caption"
+```
+
+The publisher supports iA Writer-style content blocks for Markdown/text files, Ghost-supported
+images (`gif`, `jpeg`, `jpg`, `png`, `svg`, and `webp`), CSV tables, and UTF-8 code files.
+Included files may contain further content blocks. Paths are resolved relative to the file that
+contains them and must remain inside the main document's folder. Recursive includes are rejected.
+
+Document metadata and content-block metadata can be inserted with `[%name]`. Content-block
+metadata may be written as consecutive `Key: value` lines or enclosed in `---` delimiters.
 
 ---
 
