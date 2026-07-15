@@ -32,7 +32,7 @@ The goal is to provide a clean, scriptable foundation for automation without tur
 ## Requirements
 
 - macOS (tested)
-- Python 3.11+
+- Python 3.12+
 - `uv` (recommended) or `venv`
 
 Install `uv`:
@@ -48,10 +48,20 @@ brew install uv
 Clone or create the project directory, then:
 
 ```bash
-uv init
-uv venv
-source .venv/bin/activate
-uv add typer rich httpx pydantic-settings python-dotenv
+uv sync
+```
+
+To make the `glamtool` command available outside the project directory, install it as an
+editable uv tool:
+
+```bash
+uv tool install --editable .
+```
+
+Refresh an existing tool installation after pulling dependency changes:
+
+```bash
+uv tool install --force --editable .
 ```
 
 Create a `.env` file:
@@ -76,13 +86,13 @@ and modify content in Ghost.
 From the project root:
 
 ```bash
-uv run python -m glamtool.cli <command>
+uv run glamtool <command>
 ```
 
-or if the virtual environment is activated:
+or, after installing the uv tool:
 
 ```bash
-python -m glamtool.cli <command>
+glamtool <command>
 ```
 
 ---
