@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from .config import settings
-from .ghost import GhostContentClient
+from .ghost import GhostAdminClient, GhostContentClient
+from .publisher import PublishingError, prepare_post
 
 app = typer.Typer(add_completion=False, help="Maintenance utilities for Ghost + APIs.")
 console = Console()
@@ -73,6 +75,14 @@ class GhostHtmlParser(HTMLParser):
 
 def ghost_client() -> GhostContentClient:
     return GhostContentClient(settings.ghost_url, settings.ghost_content_key)
+
+
+def ghost_admin_client() -> GhostAdminClient:
+    if not settings.ghost_admin_key:
+        raise PublishingError(
+            "GHOST_ADMIN_KEY is required for publishing; create a Custom Integration in Ghost Admin"
+        )
+    return GhostAdminClient(settings.ghost_url, settings.ghost_admin_key)
 
 
 def build_filter(
@@ -429,6 +439,47 @@ def export_markdown(
         return
 
     console.out(markdown, end="")
+
+
+@app.command("publish")
+def publish_markdown(
+    source: Path = typer.Argument(..., help="Markdown file to publish as a Ghost draft."),
+):
+    """Create a Ghost draft from an iA Writer-style Markdown document."""
+    try:
+        prepared = prepare_post(source)
+        client = ghost_admin_client()
+
+        uploaded: dict[Path, str] = {}
+        image_urls: dict[str, str] = {}
+        for image in prepared.images:
+            if image.is_local:
+                path = image.source
+                assert isinstance(path, Path)
+                if path not in uploaded:
+                    uploaded[path] = client.upload_image(path)
+                image_urls[image.placeholder] = uploaded[path]
+            else:
+                image_urls[image.placeholder] = str(image.source)
+
+        feature_image = None
+        if prepared.feature_image:
+            feature_image = image_urls[prepared.feature_image.placeholder]
+
+        post = client.create_draft(
+            title=prepared.title,
+            html=prepared.render_html(image_urls),
+            tags=prepared.tags,
+            authors=prepared.authors,
+            feature_image=feature_image,
+        )
+    except (PublishingError, ValueError, OSError, httpx.HTTPError) as exc:
+        console.print(f"[red]Could not create Ghost draft:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]Created Ghost draft:[/green] {post.get('title', prepared.title)}")
+    if post.get("id"):
+        console.print(f"[dim]ID:[/dim] {post['id']}")
 
 
 @app.command()

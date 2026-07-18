@@ -6,11 +6,17 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
+    "markdown-it-py>=4.0.0",
+    "pyjwt>=2.10.1",
     "pydantic-settings>=2.13.1",
+    "pyyaml>=6.0.3",
     "python-dotenv>=1.2.1",
     "rich>=14.3.3",
     "typer>=0.24.0",
 ]
+
+[project.scripts]
+glamtool = "glamtool.cli:main"
 
 [dependency-groups]
 dev = [

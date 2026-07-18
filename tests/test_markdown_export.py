@@ -95,3 +95,43 @@ def test_export_markdown_header_writes_linked_titles_and_requests_html(monkeypat
     assert seen["filter"] == (
         "status:published+tag:song-pick+published_at:>='2026-06-18'+published_at:<'2026-06-25'"
     )
+
+
+def test_publish_command_creates_a_draft(monkeypatch, tmp_path):
+    source = tmp_path / "draft.md"
+    source.write_text(
+        "---\ntags: [News]\nauthors: editor@example.com\n---\n# Draft title\n\nBody\n",
+        encoding="utf-8",
+    )
+    seen = {}
+
+    class FakeAdminClient:
+        def create_draft(self, **kwargs):
+            seen.update(kwargs)
+            return {"id": "draft-id", "title": kwargs["title"]}
+
+    monkeypatch.setattr(cli, "ghost_admin_client", lambda: FakeAdminClient())
+
+    result = runner.invoke(cli.app, ["publish", str(source)])
+
+    assert result.exit_code == 0, result.output
+    assert "Created Ghost draft: Draft title" in result.output
+    assert "ID: draft-id" in result.output
+    assert seen == {
+        "title": "Draft title",
+        "html": "<p>Body</p>",
+        "tags": ["News"],
+        "authors": ["editor@example.com"],
+        "feature_image": None,
+    }
+
+
+def test_publish_command_requires_an_admin_key(monkeypatch, tmp_path):
+    source = tmp_path / "draft.md"
+    source.write_text("# Draft title\n\nBody\n", encoding="utf-8")
+    monkeypatch.setattr(cli.settings, "ghost_admin_key", None)
+
+    result = runner.invoke(cli.app, ["publish", str(source)])
+
+    assert result.exit_code == 1
+    assert "GHOST_ADMIN_KEY is required" in result.output

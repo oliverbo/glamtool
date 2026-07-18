@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import mimetypes
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
+import jwt
 
 
 @dataclass(frozen=True)
@@ -102,3 +106,87 @@ class GhostContentClient:
             if len(batch) < per_page:
                 break
         return all_posts
+
+
+class GhostAdminClient:
+    """Authenticated client for creating Ghost drafts and uploading their images."""
+
+    def __init__(self, base_url: str, admin_key: str, timeout_s: float = 20.0):
+        self.base_url = base_url.rstrip("/")
+        self.admin_key = admin_key.strip()
+        self.timeout_s = timeout_s
+        self._key_id, self._secret = self._parse_key(self.admin_key)
+
+    @staticmethod
+    def _parse_key(admin_key: str) -> tuple[str, bytes]:
+        try:
+            key_id, secret = admin_key.split(":", 1)
+            secret_bytes = bytes.fromhex(secret)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("GHOST_ADMIN_KEY must use the '<id>:<hex-secret>' format") from exc
+        if not key_id or not secret_bytes:
+            raise ValueError("GHOST_ADMIN_KEY must use the '<id>:<hex-secret>' format")
+        return key_id, secret_bytes
+
+    def _endpoint(self, path: str) -> str:
+        return f"{self.base_url}/ghost/api/admin/{path.lstrip('/')}"
+
+    def _headers(self) -> dict[str, str]:
+        now = int(time.time())
+        token = jwt.encode(
+            {"iat": now, "exp": now + 5 * 60, "aud": "/admin/"},
+            self._secret,
+            algorithm="HS256",
+            headers={"kid": self._key_id, "typ": "JWT"},
+        )
+        return {
+            "Authorization": f"Ghost {token}",
+            "Accept-Version": "v5.0",
+        }
+
+    def upload_image(self, path: Path) -> str:
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        with path.open("rb") as handle, httpx.Client(timeout=self.timeout_s) as client:
+            response = client.post(
+                self._endpoint("images/upload/"),
+                headers=self._headers(),
+                files={"file": (path.name, handle, content_type)},
+                data={"purpose": "image", "ref": str(path)},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        try:
+            return payload["images"][0]["url"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Ghost returned an invalid image upload response for {path}") from exc
+
+    def create_draft(
+        self,
+        *,
+        title: str,
+        html: str,
+        tags: Optional[list[str]] = None,
+        authors: Optional[list[str]] = None,
+        feature_image: Optional[str] = None,
+    ) -> dict[str, Any]:
+        post: dict[str, Any] = {"title": title, "html": html, "status": "draft"}
+        if tags:
+            post["tags"] = tags
+        if authors:
+            post["authors"] = authors
+        if feature_image:
+            post["feature_image"] = feature_image
+
+        with httpx.Client(timeout=self.timeout_s) as client:
+            response = client.post(
+                self._endpoint("posts/"),
+                headers=self._headers(),
+                params={"source": "html"},
+                json={"posts": [post]},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        try:
+            return payload["posts"][0]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError("Ghost returned an invalid post creation response") from exc

@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     ghost_url: str
     ghost_content_key: str
+    ghost_admin_key: str | None = None
 
 
 settings = Settings()
