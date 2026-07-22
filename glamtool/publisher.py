@@ -18,7 +18,7 @@ class PublishingError(ValueError):
 IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
 TEXT_EXTENSIONS = {".md", ".markdown", ".txt", ".text"}
 CONTENT_BLOCK_RE = re.compile(
-    r"^/(?P<path>.+?\.[A-Za-z0-9]+)"
+    r"^(?P<explicit>/)?(?P<path>.+?\.[A-Za-z0-9]+)"
     r"(?:\s+(?:\"(?P<double>[^\"]*)\"|'(?P<single>[^']*)'|\((?P<paren>[^)]*)\)))?\s*$"
 )
 METADATA_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _-]*\s*:")
@@ -168,9 +168,14 @@ def _expand_content(
             index += 1
             continue
 
+        relative = Path(unquote(match.group("path").strip()))
+        if not match.group("explicit") and not (current_file.parent / relative).is_file():
+            output.append(_rebase_image_destinations(lines[index], current_file, root))
+            index += 1
+            continue
+
         block_metadata, next_index = _consume_block_metadata(lines, index + 1, current_file)
         merged_metadata = {**_normalize_metadata(metadata), **_normalize_metadata(block_metadata)}
-        relative = Path(unquote(match.group("path").strip()))
         block_path = _safe_child_path(current_file.parent, relative, root)
         caption = (
             str(_normalize_metadata(block_metadata).get("alt", "")).strip()
