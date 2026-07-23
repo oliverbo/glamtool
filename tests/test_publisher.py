@@ -76,6 +76,55 @@ def test_nested_content_block_images_are_resolved_from_the_included_file(tmp_pat
     assert post.images[0].source == (parts / "photo.jpg").resolve()
 
 
+def test_bare_image_content_block_is_used_as_feature_image(tmp_path):
+    image = tmp_path / "Mallory Hawk.jpg"
+    image.write_bytes(b"image")
+    source = tmp_path / "post.txt"
+    source.write_text("# Title\n\nMallory Hawk.jpg\n\nBody\n", encoding="utf-8")
+
+    post = prepare_post(source)
+
+    assert [asset.source for asset in post.images] == [image.resolve()]
+    assert post.feature_image == post.images[0]
+    assert "Mallory Hawk.jpg" not in post.markdown
+
+
+def test_bare_content_blocks_support_captions_and_text_files(tmp_path):
+    image = tmp_path / "cover photo.jpg"
+    image.write_bytes(b"image")
+    section = tmp_path / "section.txt"
+    section.write_text("Included text", encoding="utf-8")
+    source = tmp_path / "post.txt"
+    source.write_text(
+        '# Title\n\ncover photo.jpg "Cover caption"\n\nsection.txt\n',
+        encoding="utf-8",
+    )
+
+    post = prepare_post(source)
+
+    assert post.images[0].source == image.resolve()
+    assert post.images[0].alt == "Cover caption"
+    assert "Included text" in post.markdown
+
+
+def test_missing_bare_content_block_candidate_remains_text(tmp_path):
+    source = tmp_path / "post.txt"
+    source.write_text("# Title\n\nNotes.txt\n", encoding="utf-8")
+
+    post = prepare_post(source)
+
+    assert post.images == []
+    assert post.markdown == "Notes.txt"
+
+
+def test_missing_explicit_content_block_is_still_rejected(tmp_path):
+    source = tmp_path / "post.txt"
+    source.write_text("# Title\n\n/missing.txt\n", encoding="utf-8")
+
+    with pytest.raises(PublishingError, match="Referenced file does not exist"):
+        prepare_post(source)
+
+
 def test_recursive_content_blocks_are_rejected(tmp_path):
     (tmp_path / "a.md").write_text("/b.md\n", encoding="utf-8")
     (tmp_path / "b.md").write_text("/a.md\n", encoding="utf-8")

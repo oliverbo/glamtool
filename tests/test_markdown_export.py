@@ -126,6 +126,38 @@ def test_publish_command_creates_a_draft(monkeypatch, tmp_path):
     }
 
 
+def test_publish_command_uploads_bare_content_block_images(monkeypatch, tmp_path):
+    cover = tmp_path / "cover image.jpg"
+    cover.write_bytes(b"cover")
+    inside = tmp_path / "inside.png"
+    inside.write_bytes(b"inside")
+    source = tmp_path / "draft.md"
+    source.write_text(
+        "# Draft title\n\ncover image.jpg\n\nBody\n\ninside.png\n",
+        encoding="utf-8",
+    )
+    seen = {"uploads": []}
+
+    class FakeAdminClient:
+        def upload_image(self, path):
+            seen["uploads"].append(path)
+            return f"https://ghost.example/{path.name.replace(' ', '-')}"
+
+        def create_draft(self, **kwargs):
+            seen["draft"] = kwargs
+            return {"id": "draft-id", "title": kwargs["title"]}
+
+    monkeypatch.setattr(cli, "ghost_admin_client", lambda: FakeAdminClient())
+
+    result = runner.invoke(cli.app, ["publish", str(source)])
+
+    assert result.exit_code == 0, result.output
+    assert seen["uploads"] == [cover.resolve(), inside.resolve()]
+    assert seen["draft"]["feature_image"] == "https://ghost.example/cover-image.jpg"
+    assert "cover-image.jpg" not in seen["draft"]["html"]
+    assert 'src="https://ghost.example/inside.png"' in seen["draft"]["html"]
+
+
 def test_publish_command_requires_an_admin_key(monkeypatch, tmp_path):
     source = tmp_path / "draft.md"
     source.write_text("# Draft title\n\nBody\n", encoding="utf-8")
