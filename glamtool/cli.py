@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .config import settings
+from .glamglare import GlamglareApiError, GlamglareArtist, GlamglareClient
 from .ghost import GhostAdminClient, GhostContentClient
 from .publisher import PublishingError, prepare_post
 
@@ -27,6 +28,11 @@ MARKDOWN_POST_FIELDS = "id,title,status,published_at,url,slug,html"
 class MarkdownFormat(str, Enum):
     post = "post"
     header = "header"
+    instagram = "instagram"
+
+
+class InstagramRollCallError(ValueError):
+    """Raised when one or more Song Picks cannot be rendered as a roll call."""
 
 
 @dataclass
@@ -83,6 +89,19 @@ def ghost_admin_client() -> GhostAdminClient:
             "GHOST_ADMIN_KEY is required for publishing; create a Custom Integration in Ghost Admin"
         )
     return GhostAdminClient(settings.ghost_url, settings.ghost_admin_key)
+
+
+def glamglare_client() -> GlamglareClient:
+    if (
+        not settings.gg_api_url
+        or not settings.gg_api_url.strip()
+        or not settings.gg_api_secret
+        or not settings.gg_api_secret.strip()
+    ):
+        raise InstagramRollCallError(
+            "GG_API_URL and GG_API_SECRET are required for Instagram roll-call exports"
+        )
+    return GlamglareClient(settings.gg_api_url, settings.gg_api_secret)
 
 
 def build_filter(
@@ -267,6 +286,51 @@ def render_markdown_posts(posts, format_: MarkdownFormat) -> str:
     return separator.join(blocks).strip() + ("\n" if blocks else "")
 
 
+def parse_song_pick_title(title: str) -> tuple[str, str]:
+    value = title.strip()
+    value = re.sub(r"^Song Pick:\s*", "", value, flags=re.IGNORECASE)
+    match = re.match(r"^(?P<artist>.+?)\s+-\s+(?P<song>.+)$", value)
+    if not match:
+        raise ValueError("expected 'Artist - Song' (optionally prefixed by 'Song Pick:')")
+    return match.group("artist").strip(), match.group("song").strip()
+
+
+def render_instagram_roll_call(posts, client: GlamglareClient) -> str:
+    lines: list[str] = []
+    errors: list[str] = []
+    artists: dict[str, GlamglareArtist | None] = {}
+
+    for post in posts:
+        title = post.title or ""
+        try:
+            artist_name, song_name = parse_song_pick_title(title)
+        except ValueError as exc:
+            errors.append(f"{title or '(untitled)'}: {exc}")
+            continue
+
+        cache_key = artist_name.casefold()
+        if cache_key not in artists:
+            artists[cache_key] = client.find_artist(artist_name)
+        artist = artists[cache_key]
+        if artist is None:
+            errors.append(f"{title}: artist {artist_name!r} was not found")
+            continue
+        if not artist.instagram_handle:
+            errors.append(f"{title}: artist {artist.name!r} has no Instagram handle")
+            continue
+
+        handle = artist.instagram_handle.lstrip("@").strip()
+        if not handle:
+            errors.append(f"{title}: artist {artist.name!r} has no Instagram handle")
+            continue
+        lines.append(f"- @{handle} - {song_name}")
+
+    if errors:
+        details = "\n".join(f"- {error}" for error in errors)
+        raise InstagramRollCallError(f"Could not resolve all Song Picks:\n{details}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 @app.command()
 def posts(
     limit: int = typer.Option(15, help="Number of posts to show (max 100)."),
@@ -376,7 +440,10 @@ def export_markdown(
     format_: MarkdownFormat = typer.Option(
         MarkdownFormat.post,
         "--format",
-        help='Markdown output format: "post" for full posts or "header" for linked titles.',
+        help=(
+            'Markdown output format: "post" for full posts, "header" for linked titles, '
+            'or "instagram" for an Instagram roll call.'
+        ),
     ),
     published_only: bool = typer.Option(True, help="Export only published posts."),
     tag: Optional[list[str]] = typer.Option(
@@ -409,7 +476,7 @@ def export_markdown(
     ),
 ):
     """
-    Export posts as Markdown, including full Ghost post bodies or linked title headers.
+    Export posts as Markdown, including full posts, linked titles, or an Instagram roll call.
     """
     client = ghost_client()
 
@@ -428,7 +495,14 @@ def export_markdown(
         fields=MARKDOWN_POST_FIELDS,
         order="published_at asc",
     )
-    markdown = render_markdown_posts(posts, format_)
+    try:
+        if format_ == MarkdownFormat.instagram:
+            markdown = render_instagram_roll_call(posts, glamglare_client())
+        else:
+            markdown = render_markdown_posts(posts, format_)
+    except (GlamglareApiError, InstagramRollCallError, httpx.HTTPError) as exc:
+        console.print(f"[red]Could not generate Instagram roll call:[/red] {exc}")
+        raise typer.Exit(code=1)
 
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)

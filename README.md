@@ -70,6 +70,8 @@ Create a `.env` file:
 GHOST_URL="https://your-site.com"
 GHOST_CONTENT_KEY="YOUR_CONTENT_API_KEY"
 GHOST_ADMIN_KEY="YOUR_ADMIN_API_ID:YOUR_ADMIN_API_SECRET"
+GG_API_URL="https://your-glamglare-api-host"
+GG_API_SECRET="YOUR_GLAMTOOL_CLIENT_SECRET"
 ```
 
 You can generate a Content API key in Ghost Admin under:
@@ -78,6 +80,10 @@ Settings → Integrations → Custom Integration
 
 The Admin API key is only required for the `publish` command. Keep it private: it can create
 and modify content in Ghost.
+
+The glamglare API settings are only required for Instagram roll-call exports. The client uses
+the `glamtool` API-client ID and sends `GG_API_SECRET` through the API's `ApiKey` authentication
+scheme.
 
 ---
 
@@ -207,7 +213,7 @@ Options:
 | Option             | Description                                      |
 | ------------------ | ------------------------------------------------ |
 | `--out PATH`       | Output Markdown path; omit to print to stdout    |
-| `--format FORMAT`  | `post` for full posts or `header` for title list |
+| `--format FORMAT`  | `post`, `header`, or `instagram`                 |
 | `--published-only` | Export only published posts                      |
 | `--tag TAG`        | Filter by tag                                    |
 | `--any-tag`        | Match ANY tag                                    |
@@ -227,6 +233,16 @@ Linked header list:
 ```bash
 python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-18 --format header
 ```
+
+Instagram roll call:
+
+```bash
+python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-18 --format instagram
+```
+
+The `instagram` format parses titles as `Song Pick: Artist - Song`, looks up the exact artist
+in the glamglare API, and writes `- @instagramHandle - Song`. It stops with an actionable error
+instead of silently omitting malformed titles, unknown artists, or artists without a handle.
 
 The `post` format writes each title as a level-two heading and converts Ghost HTML content to Markdown. YouTube embeds are emitted as plain links.
 
@@ -317,6 +333,7 @@ Terminal output (Rich) or CSV export
 ### Key Components
 
 - `config.py` — loads environment configuration
+- `glamglare.py` — glamglare artist lookup client
 - `ghost.py` — API client + pagination logic
 - `cli.py` — command definitions
 - `GhostPost` dataclass — structured API result
