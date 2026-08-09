@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     ghost_url: str
     ghost_content_key: str
     ghost_admin_key: str | None = None
+    gg_api_url: str | None = None
+    gg_api_secret: str | None = None
 
 
 settings = Settings()
