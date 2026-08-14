@@ -282,11 +282,15 @@ Hello, [%audience].
 /sections/intro.md
 Audience: new subscribers
 
-/images/chart.png "Chart caption"
+/images/chart.png (Chart caption)
 ```
 
 iA Writer may store content blocks without a leading slash when the referenced file is in the
 same folder. Bare references such as `images/cover.jpg` and `Mallory Hawk.jpg` are supported too.
+Image captions may follow the reference in parentheses, as in `images/chart.png (Chart caption)`.
+Body-image captions are rendered visibly in Ghost, while a caption on the first image is assigned
+to the feature image. Use `Alt: Accessible description` on the following line when the image's
+alternative text should differ from its caption.
 
 The publisher supports iA Writer-style content blocks for Markdown/text files, Ghost-supported
 images (`gif`, `jpeg`, `jpg`, `png`, `svg`, and `webp`), CSV tables, and UTF-8 code files.

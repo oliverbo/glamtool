@@ -48,6 +48,7 @@ Alt: Inside image
     ]
     assert post.feature_image == post.images[0]
     assert post.images[1].alt == "Inside image"
+    assert post.images[1].caption == "Ignored caption"
 
     html = post.render_html(
         {
@@ -61,6 +62,9 @@ Alt: Inside image
     assert "<table>" in html
     assert "<code class=\"language-py\">" in html
     assert 'src="https://ghost.example/inside.png"' in html
+    assert 'class="kg-card kg-image-card kg-card-hascaption"' in html
+    assert 'alt="Inside image"' in html
+    assert "<figcaption>Ignored caption</figcaption>" in html
 
 
 def test_nested_content_block_images_are_resolved_from_the_included_file(tmp_path):
@@ -104,7 +108,52 @@ def test_bare_content_blocks_support_captions_and_text_files(tmp_path):
 
     assert post.images[0].source == image.resolve()
     assert post.images[0].alt == "Cover caption"
+    assert post.images[0].caption == "Cover caption"
     assert "Included text" in post.markdown
+
+
+def test_ia_writer_parenthetical_caption_is_rendered_for_body_image(tmp_path):
+    cover = tmp_path / "cover.jpg"
+    cover.write_bytes(b"cover")
+    image = tmp_path / "body image.jpg"
+    image.write_bytes(b"body")
+    source = tmp_path / "post.txt"
+    source.write_text(
+        "# Title\n\ncover.jpg\n\nbody image.jpg (A <great> & useful caption)\n",
+        encoding="utf-8",
+    )
+
+    post = prepare_post(source)
+
+    body_image = post.images[1]
+    assert body_image.alt == "A <great> & useful caption"
+    assert body_image.caption == "A <great> & useful caption"
+    html = post.render_html(
+        {
+            post.images[0].placeholder: "https://ghost.example/cover.jpg",
+            body_image.placeholder: "https://ghost.example/body.jpg?size=large&format=webp",
+        }
+    )
+    assert 'src="https://ghost.example/body.jpg?size=large&amp;format=webp"' in html
+    assert 'alt="A &lt;great&gt; &amp; useful caption"' in html
+    assert "<figcaption>A &lt;great&gt; &amp; useful caption</figcaption>" in html
+
+
+def test_content_block_alt_metadata_is_distinct_from_caption(tmp_path):
+    cover = tmp_path / "cover.jpg"
+    cover.write_bytes(b"cover")
+    image = tmp_path / "body.jpg"
+    image.write_bytes(b"body")
+    source = tmp_path / "post.txt"
+    source.write_text(
+        "# Title\n\ncover.jpg\n\nbody.jpg (Visible caption)\nAlt: Accessible description\n",
+        encoding="utf-8",
+    )
+
+    post = prepare_post(source)
+
+    assert post.images[1].alt == "Accessible description"
+    assert post.images[1].caption == "Visible caption"
 
 
 def test_missing_bare_content_block_candidate_remains_text(tmp_path):

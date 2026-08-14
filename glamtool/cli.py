@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
+from html import escape as escape_html
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
@@ -537,8 +538,14 @@ def publish_markdown(
                 image_urls[image.placeholder] = str(image.source)
 
         feature_image = None
+        feature_image_alt = None
+        feature_image_caption = None
         if prepared.feature_image:
             feature_image = image_urls[prepared.feature_image.placeholder]
+            feature_image_alt = prepared.feature_image.alt or None
+            feature_image_caption = (
+                escape_html(prepared.feature_image.caption) or None
+            )
 
         post = client.create_draft(
             title=prepared.title,
@@ -546,6 +553,8 @@ def publish_markdown(
             tags=prepared.tags,
             authors=prepared.authors,
             feature_image=feature_image,
+            feature_image_alt=feature_image_alt,
+            feature_image_caption=feature_image_caption,
         )
     except (PublishingError, ValueError, OSError, httpx.HTTPError) as exc:
         console.print(f"[red]Could not create Ghost draft:[/red] {exc}")

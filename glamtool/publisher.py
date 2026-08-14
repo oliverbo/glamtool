@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass
+from html import escape, unescape
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import unquote, urlparse
@@ -24,9 +25,9 @@ CONTENT_BLOCK_RE = re.compile(
 METADATA_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _-]*\s*:")
 VARIABLE_RE = re.compile(r"\[%([A-Za-z][A-Za-z0-9 _-]*)\]")
 IMAGE_RE = re.compile(
-    r"!\[(?P<alt>[^\]]*)\]\("
+    r"!\[(?P<alt>(?:\\.|[^\]\\])*)\]\("
     r"(?P<destination><[^>]+>|[^\s)]+)"
-    r"(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\)"
+    r"(?:\s+(?:\"(?P<double>[^\"]*)\"|'(?P<single>[^']*)'|\((?P<paren>[^)]*)\)))?\)"
 )
 FENCE_RE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})")
 
@@ -36,6 +37,7 @@ class ImageAsset:
     placeholder: str
     source: Path | str
     alt: str = ""
+    caption: str = ""
 
     @property
     def is_local(self) -> bool:
@@ -55,15 +57,15 @@ class PreparedPost:
         return self.images[0] if self.images else None
 
     def render_html(self, image_urls: Mapping[str, str]) -> str:
-        markdown = self.markdown
+        rendered = markdown_renderer().render(self.markdown)
         for image in self.images:
-            if image.placeholder in markdown:
+            if image.placeholder in rendered:
                 try:
                     url = image_urls[image.placeholder]
                 except KeyError as exc:
                     raise PublishingError(f"Missing uploaded URL for {image.source}") from exc
-                markdown = markdown.replace(image.placeholder, url)
-        return markdown_renderer().render(markdown).strip()
+                rendered = rendered.replace(image.placeholder, escape(url, quote=True))
+        return rendered.strip()
 
 
 def markdown_renderer() -> MarkdownIt:
@@ -175,18 +177,21 @@ def _expand_content(
             continue
 
         block_metadata, next_index = _consume_block_metadata(lines, index + 1, current_file)
-        merged_metadata = {**_normalize_metadata(metadata), **_normalize_metadata(block_metadata)}
+        normalized_block_metadata = _normalize_metadata(block_metadata)
+        merged_metadata = {**_normalize_metadata(metadata), **normalized_block_metadata}
         block_path = _safe_child_path(current_file.parent, relative, root)
         caption = (
-            str(_normalize_metadata(block_metadata).get("alt", "")).strip()
+            str(normalized_block_metadata.get("caption", "")).strip()
             or match.group("double")
             or match.group("single")
             or match.group("paren")
             or ""
         )
+        alt = str(normalized_block_metadata.get("alt", "")).strip() or caption
         output.append(
             _render_content_block(
                 block_path,
+                alt=alt,
                 caption=caption,
                 root=root,
                 metadata=merged_metadata,
@@ -249,6 +254,7 @@ def _safe_child_path(base: Path, relative: Path, root: Path) -> Path:
 def _render_content_block(
     path: Path,
     *,
+    alt: str,
     caption: str,
     root: Path,
     metadata: Mapping[str, Any],
@@ -258,7 +264,11 @@ def _render_content_block(
     if suffix in IMAGE_EXTENSIONS:
         relative = path.relative_to(root).as_posix()
         destination = f"<{relative}>" if " " in relative else relative
-        return f"![{caption}]({destination})"
+        escaped_alt = alt.replace("\\", "\\\\").replace("]", "\\]")
+        if caption:
+            escaped_caption = escape(caption, quote=True)
+            return f'![{escaped_alt}]({destination} "{escaped_caption}")'
+        return f"![{escaped_alt}]({destination})"
 
     if path in stack:
         chain = " -> ".join(item.name for item in (*stack, path))
@@ -361,6 +371,7 @@ def _extract_images(markdown: str, source: Path, root: Path) -> tuple[str, list[
     images: list[ImageAsset] = []
     first = True
     fence: tuple[str, int] | None = None
+    standalone_image = False
 
     def replace(match: re.Match[str]) -> str:
         nonlocal first
@@ -375,11 +386,26 @@ def _extract_images(markdown: str, source: Path, root: Path) -> tuple[str, list[
             image_source = _safe_child_path(source.parent, Path(unquote(destination)), root)
 
         placeholder = f"glamtool-image-{len(images)}.invalid"
-        asset = ImageAsset(placeholder=placeholder, source=image_source, alt=match.group("alt"))
+        caption = (
+            match.group("double") or match.group("single") or match.group("paren") or ""
+        )
+        asset = ImageAsset(
+            placeholder=placeholder,
+            source=image_source,
+            alt=unescape(match.group("alt").replace("\\]", "]").replace("\\\\", "\\")),
+            caption=unescape(caption),
+        )
         images.append(asset)
         if first:
             first = False
             return ""
+        if asset.caption and standalone_image:
+            return (
+                '<figure class="kg-card kg-image-card kg-card-hascaption">\n'
+                f'<img src="{placeholder}" class="kg-image" alt="{escape(asset.alt, quote=True)}">\n'
+                f"<figcaption>{escape(asset.caption)}</figcaption>\n"
+                "</figure>"
+            )
         return match.group(0).replace(raw_destination, placeholder, 1)
 
     output: list[str] = []
@@ -393,6 +419,7 @@ def _extract_images(markdown: str, source: Path, root: Path) -> tuple[str, list[
                 fence = None
             output.append(line)
         elif fence is None:
+            standalone_image = IMAGE_RE.fullmatch(line.strip()) is not None
             output.append(IMAGE_RE.sub(replace, line))
         else:
             output.append(line)
