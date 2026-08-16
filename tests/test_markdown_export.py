@@ -241,6 +241,8 @@ def test_publish_command_creates_a_draft(monkeypatch, tmp_path):
         "tags": ["News"],
         "authors": ["editor@example.com"],
         "feature_image": None,
+        "feature_image_alt": None,
+        "feature_image_caption": None,
     }
 
 
@@ -251,7 +253,8 @@ def test_publish_command_uploads_bare_content_block_images(monkeypatch, tmp_path
     inside.write_bytes(b"inside")
     source = tmp_path / "draft.md"
     source.write_text(
-        "# Draft title\n\ncover image.jpg\n\nBody\n\ninside.png\n",
+        "# Draft title\n\ncover image.jpg (Cover <caption>)\n\n"
+        "Body\n\ninside.png (Inside caption)\n",
         encoding="utf-8",
     )
     seen = {"uploads": []}
@@ -272,8 +275,11 @@ def test_publish_command_uploads_bare_content_block_images(monkeypatch, tmp_path
     assert result.exit_code == 0, result.output
     assert seen["uploads"] == [cover.resolve(), inside.resolve()]
     assert seen["draft"]["feature_image"] == "https://ghost.example/cover-image.jpg"
+    assert seen["draft"]["feature_image_alt"] == "Cover <caption>"
+    assert seen["draft"]["feature_image_caption"] == "Cover &lt;caption&gt;"
     assert "cover-image.jpg" not in seen["draft"]["html"]
     assert 'src="https://ghost.example/inside.png"' in seen["draft"]["html"]
+    assert "<figcaption>Inside caption</figcaption>" in seen["draft"]["html"]
 
 
 def test_publish_command_requires_an_admin_key(monkeypatch, tmp_path):

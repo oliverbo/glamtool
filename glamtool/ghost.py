@@ -168,6 +168,8 @@ class GhostAdminClient:
         tags: Optional[list[str]] = None,
         authors: Optional[list[str]] = None,
         feature_image: Optional[str] = None,
+        feature_image_alt: Optional[str] = None,
+        feature_image_caption: Optional[str] = None,
     ) -> dict[str, Any]:
         post: dict[str, Any] = {"title": title, "html": html, "status": "draft"}
         if tags:
@@ -176,6 +178,10 @@ class GhostAdminClient:
             post["authors"] = authors
         if feature_image:
             post["feature_image"] = feature_image
+        if feature_image_alt:
+            post["feature_image_alt"] = feature_image_alt
+        if feature_image_caption:
+            post["feature_image_caption"] = feature_image_caption
 
         with httpx.Client(timeout=self.timeout_s) as client:
             response = client.post(

@@ -98,6 +98,8 @@ def test_admin_client_uploads_images_and_creates_a_draft(monkeypatch, tmp_path):
         tags=["News"],
         authors=["editor@example.com"],
         feature_image=uploaded_url,
+        feature_image_alt="Cover alt text",
+        feature_image_caption="Cover caption",
     )
 
     assert uploaded_url == "https://ghost.example/uploaded.png"
@@ -117,6 +119,8 @@ def test_admin_client_uploads_images_and_creates_a_draft(monkeypatch, tmp_path):
                 "tags": ["News"],
                 "authors": ["editor@example.com"],
                 "feature_image": "https://ghost.example/uploaded.png",
+                "feature_image_alt": "Cover alt text",
+                "feature_image_caption": "Cover caption",
             }
         ]
     }
