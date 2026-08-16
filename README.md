@@ -296,6 +296,8 @@ The publisher supports iA Writer-style content blocks for Markdown/text files, G
 images (`gif`, `jpeg`, `jpg`, `png`, `svg`, and `webp`), CSV tables, and UTF-8 code files.
 Included files may contain further content blocks. Paths are resolved relative to the file that
 contains them and must remain inside the main document's folder. Recursive includes are rejected.
+Trailing iA Writer Authorship annotations are removed from the main document and included text
+files before the Ghost draft is rendered.
 
 Document metadata and content-block metadata can be inserted with `[%name]`. Content-block
 metadata may be written as consecutive `Key: value` lines or enclosed in `---` delimiters.

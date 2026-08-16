@@ -67,6 +67,67 @@ Alt: Inside image
     assert "<figcaption>Ignored caption</figcaption>" in html
 
 
+def test_prepare_post_strips_ia_writer_annotations(tmp_path):
+    source = tmp_path / "post.md"
+    source.write_text(
+        """# Title
+
+Body
+
+---
+Annotations: 0,12 SHA-256 1132bf5e376a605f5beed4b204456114
+@Human: 0,4
+&AI <ChatGPT>: 4,4
+*Reference: 8,4
+...
+""",
+        encoding="utf-8",
+    )
+
+    post = prepare_post(source)
+
+    assert post.markdown == "Body"
+    assert post.render_html({}) == "<p>Body</p>"
+
+
+def test_annotations_are_stripped_from_included_text_with_a_translated_key(tmp_path):
+    section = tmp_path / "section.md"
+    section.write_text(
+        """Included text
+
+---
+Anmerkungen: 0,13 SHA-256 ABCDEF0123456789ABCDEF0123456789
+@Human: 0,13
+...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "post.md"
+    source.write_text("# Title\n\n/section.md\n", encoding="utf-8")
+
+    post = prepare_post(source)
+
+    assert post.markdown == "Included text"
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "---\nNotes: keep me\n...\n",
+        "---\nAnnotations: 0,4 SHA-256 too-short\n@Human: 0,4\n...\n",
+        "---\nAnnotations: 0,4 SHA-256 1132bf5e376a605f5beed4b204456114\n@Human: 0,4\n",
+    ],
+)
+def test_non_annotation_trailing_blocks_are_preserved(tmp_path, suffix):
+    source = tmp_path / "post.md"
+    source.write_text(f"# Title\n\nBody\n\n{suffix}", encoding="utf-8")
+
+    post = prepare_post(source)
+
+    assert "Body" in post.markdown
+    assert "---" in post.markdown
+
+
 def test_nested_content_block_images_are_resolved_from_the_included_file(tmp_path):
     parts = tmp_path / "parts"
     parts.mkdir()

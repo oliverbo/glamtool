@@ -30,6 +30,10 @@ IMAGE_RE = re.compile(
     r"(?:\s+(?:\"(?P<double>[^\"]*)\"|'(?P<single>[^']*)'|\((?P<paren>[^)]*)\)))?\)"
 )
 FENCE_RE = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})")
+ANNOTATION_HASH_RE = re.compile(
+    r"^[ \t]*(?:\\:|[^:\r\n])+[ \t]*:[ \t]*"
+    r"\d+(?:,\d+)?[ \t]+SHA-256[ \t]+[0-9A-Fa-f]{20,64}[ \t]*$"
+)
 
 
 @dataclass(frozen=True)
@@ -78,7 +82,7 @@ def prepare_post(source: Path) -> PreparedPost:
         raise PublishingError(f"Markdown file does not exist: {source}")
 
     root = source.parent
-    text = source.read_text(encoding="utf-8")
+    text = _strip_markdown_annotations(source.read_text(encoding="utf-8"))
     metadata, body = _split_front_matter(text, source)
     expanded = _expand_content(
         body,
@@ -117,6 +121,21 @@ def _split_front_matter(text: str, source: Path) -> tuple[dict[str, Any], str]:
     if not isinstance(parsed, dict):
         raise PublishingError(f"Front matter in {source} must be a mapping")
     return {str(key): value for key, value in parsed.items()}, "".join(lines[closing + 1 :])
+
+
+def _strip_markdown_annotations(text: str) -> str:
+    """Remove a valid iA Writer Markdown Annotations block at end of file."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[-1].strip() != "...":
+        return text
+
+    for index in range(len(lines) - 2, -1, -1):
+        if lines[index].strip() != "---":
+            continue
+        hash_annotation = lines[index + 1].rstrip("\r\n")
+        if ANNOTATION_HASH_RE.fullmatch(hash_annotation):
+            return "".join(lines[:index])
+    return text
 
 
 def _normalize_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
@@ -283,6 +302,7 @@ def _render_content_block(
         raise PublishingError(f"Content block is not UTF-8 text: {path}") from exc
 
     if suffix in TEXT_EXTENSIONS:
+        content = _strip_markdown_annotations(content)
         included_metadata, included_body = _split_front_matter(content, path)
         merged = {
             **_normalize_metadata(included_metadata),
