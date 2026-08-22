@@ -180,13 +180,20 @@ def test_export_markdown_instagram_writes_roll_call_and_caches_artists(monkeypat
     )
 
 
-def test_export_markdown_instagram_reports_all_unresolved_posts_without_writing(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize("instagram_handle", [None, "", "   "])
+def test_export_markdown_instagram_uses_artist_name_when_handle_is_missing(
+    monkeypatch, tmp_path, instagram_handle
 ):
     posts = [
-        GhostPost("1", "Bad title", "published", None, None, None, None),
-        GhostPost("2", "Song Pick: Unknown - A Song", "published", None, None, None, None),
-        GhostPost("3", "Song Pick: Known - Another Song", "published", None, None, None, None),
+        GhostPost(
+            id="1",
+            title="Song Pick: The Innocence Mission - Bright as Yellow",
+            status="published",
+            published_at=None,
+            url=None,
+            feature_image=None,
+            slug="bright-as-yellow",
+        )
     ]
 
     class FakeGhostClient:
@@ -194,9 +201,40 @@ def test_export_markdown_instagram_reports_all_unresolved_posts_without_writing(
             return posts
 
     class FakeGlamglareClient:
-        def find_artist(self, name):
-            if name == "Known":
-                return GlamglareArtist(name="Known", instagram_handle=None)
+        def find_artist(self, _name):
+            return GlamglareArtist(
+                name="The Innocence Mission", instagram_handle=instagram_handle
+            )
+
+    monkeypatch.setattr(cli, "ghost_client", FakeGhostClient)
+    monkeypatch.setattr(cli, "glamglare_client", FakeGlamglareClient)
+    out = tmp_path / "instagram.md"
+
+    result = runner.invoke(
+        cli.app,
+        ["export-markdown", "--format", "instagram", "--out", str(out)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert out.read_text(encoding="utf-8") == (
+        "- The Innocence Mission - Bright as Yellow\n"
+    )
+
+
+def test_export_markdown_instagram_reports_all_unresolved_posts_without_writing(
+    monkeypatch, tmp_path
+):
+    posts = [
+        GhostPost("1", "Bad title", "published", None, None, None, None),
+        GhostPost("2", "Song Pick: Unknown - A Song", "published", None, None, None, None),
+    ]
+
+    class FakeGhostClient:
+        def paginate_posts(self, **_kwargs):
+            return posts
+
+    class FakeGlamglareClient:
+        def find_artist(self, _name):
             return None
 
     monkeypatch.setattr(cli, "ghost_client", FakeGhostClient)
@@ -211,7 +249,6 @@ def test_export_markdown_instagram_reports_all_unresolved_posts_without_writing(
     assert result.exit_code == 1
     assert "Bad title" in result.output
     assert "artist 'Unknown' was not found" in result.output
-    assert "artist 'Known' has no Instagram handle" in result.output
     assert not out.exists()
 
 

@@ -316,15 +316,9 @@ def render_instagram_roll_call(posts, client: GlamglareClient) -> str:
         if artist is None:
             errors.append(f"{title}: artist {artist_name!r} was not found")
             continue
-        if not artist.instagram_handle:
-            errors.append(f"{title}: artist {artist.name!r} has no Instagram handle")
-            continue
-
-        handle = artist.instagram_handle.lstrip("@").strip()
-        if not handle:
-            errors.append(f"{title}: artist {artist.name!r} has no Instagram handle")
-            continue
-        lines.append(f"- @{handle} - {song_name}")
+        handle = (artist.instagram_handle or "").lstrip("@").strip()
+        artist_label = f"@{handle}" if handle else artist.name
+        lines.append(f"- {artist_label} - {song_name}")
 
     if errors:
         details = "\n".join(f"- {error}" for error in errors)
