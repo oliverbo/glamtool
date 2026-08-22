@@ -241,8 +241,9 @@ python -m glamtool.cli export-markdown --tag song-pick --week 2026-06-18 --forma
 ```
 
 The `instagram` format parses titles as `Song Pick: Artist - Song`, looks up the exact artist
-in the glamglare API, and writes `- @instagramHandle - Song`. It stops with an actionable error
-instead of silently omitting malformed titles, unknown artists, or artists without a handle.
+in the glamglare API, and writes `- @instagramHandle - Song`. When an artist has no Instagram
+handle, it writes `- Artist - Song` instead. It stops with an actionable error instead of
+silently omitting malformed titles or unknown artists.
 
 The `post` format writes each title as a level-two heading and converts Ghost HTML content to Markdown. YouTube embeds are emitted as plain links.
 
