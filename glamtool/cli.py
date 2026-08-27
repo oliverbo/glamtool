@@ -9,7 +9,7 @@ from html import escape as escape_html
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 import typer
@@ -19,6 +19,7 @@ from rich.table import Table
 from .config import settings
 from .glamglare import GlamglareApiError, GlamglareArtist, GlamglareClient
 from .ghost import GhostAdminClient, GhostContentClient
+from .image_repair import ImageRepairError, image_url_loads, repair_embedded_images
 from .publisher import PublishingError, prepare_post
 
 app = typer.Typer(add_completion=False, help="Maintenance utilities for Ghost + APIs.")
@@ -87,7 +88,8 @@ def ghost_client() -> GhostContentClient:
 def ghost_admin_client() -> GhostAdminClient:
     if not settings.ghost_admin_key:
         raise PublishingError(
-            "GHOST_ADMIN_KEY is required for publishing; create a Custom Integration in Ghost Admin"
+            "GHOST_ADMIN_KEY is required for modifying Ghost posts; "
+            "create a Custom Integration in Ghost Admin"
         )
     return GhostAdminClient(settings.ghost_url, settings.ghost_admin_key)
 
@@ -557,6 +559,70 @@ def publish_markdown(
     console.print(f"[green]Created Ghost draft:[/green] {post.get('title', prepared.title)}")
     if post.get("id"):
         console.print(f"[dim]ID:[/dim] {post['id']}")
+
+
+def _post_url_identity(value: str) -> tuple[str, str]:
+    parsed = urlparse(value)
+    return parsed.netloc.casefold(), parsed.path.rstrip("/") or "/"
+
+
+@app.command("repair-post-images")
+def repair_post_images_command(
+    post_url: str = typer.Argument(..., help="Public URL of the Ghost post to repair."),
+):
+    """Repair broken WordPress image variants embedded in one Ghost post."""
+    try:
+        parsed_url = urlparse(post_url)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise ValueError("POST_URL must be an absolute http:// or https:// URL")
+        slug = unquote(parsed_url.path.rstrip("/").rsplit("/", 1)[-1])
+        if not slug:
+            raise ValueError("POST_URL must include a post slug")
+
+        content_post = ghost_client().get_post_by_slug(slug)
+        if not content_post.url or _post_url_identity(content_post.url) != _post_url_identity(post_url):
+            raise ValueError(
+                f"Ghost post {slug!r} has URL {content_post.url!r}, not the supplied URL"
+            )
+
+        admin = ghost_admin_client()
+        current_post = admin.get_post(content_post.id)
+        current_html = current_post.get("html")
+        if current_html is None:
+            raise ValueError("Ghost Admin API response did not include the post HTML")
+
+        with httpx.Client(timeout=20.0, follow_redirects=True) as image_client:
+            result = repair_embedded_images(
+                current_html,
+                post_url=content_post.url,
+                check_url=lambda url: image_url_loads(image_client, url),
+            )
+
+        console.print(
+            "Checked "
+            f"{result.checked} image(s): {result.repaired} repaired, "
+            f"{result.skipped} unchanged, {result.broken} still broken."
+        )
+        if result.broken:
+            raise ImageRepairError(
+                "One or more images have no verified working source; the post was not updated"
+            )
+        if not result.repaired:
+            console.print("[green]No update needed.[/green]")
+            return
+
+        admin.update_post_html(
+            content_post.id,
+            html=result.html,
+            updated_at=current_post.get("updated_at", ""),
+        )
+    except (ImageRepairError, PublishingError, ValueError, httpx.HTTPError) as exc:
+        console.print(f"[red]Could not repair post images:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]Updated Ghost post:[/green] {current_post.get('title', content_post.title)}"
+    )
 
 
 @app.command()
