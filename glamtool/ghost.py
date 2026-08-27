@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
 import jwt
@@ -37,6 +38,19 @@ class GhostContentClient:
         # Content API base path is /ghost/api/content/
         return f"{self.base_url}/ghost/api/content/{path.lstrip('/')}"
 
+    @staticmethod
+    def _post_from_payload(post: dict[str, Any]) -> GhostPost:
+        return GhostPost(
+            id=post.get("id"),
+            title=post.get("title"),
+            status=post.get("status"),
+            published_at=post.get("published_at"),
+            url=post.get("url"),
+            feature_image=post.get("feature_image"),
+            slug=post.get("slug"),
+            html=post.get("html"),
+        )
+
     def list_posts(
         self,
         limit: int = 15,
@@ -65,21 +79,26 @@ class GhostContentClient:
             payload = r.json()
 
         posts = payload.get("posts", [])
-        out: List[GhostPost] = []
-        for p in posts:
-            out.append(
-                GhostPost(
-                    id=p.get("id"),
-                    title=p.get("title"),
-                    status=p.get("status"),
-                    published_at=p.get("published_at"),
-                    url=p.get("url"),
-                    feature_image=p.get("feature_image"),
-                    slug=p.get("slug"),
-                    html=p.get("html"),
-                )
+        return [self._post_from_payload(post) for post in posts]
+
+    def get_post_by_slug(
+        self,
+        slug: str,
+        *,
+        fields: str = "id,title,status,published_at,url,feature_image,slug,html",
+    ) -> GhostPost:
+        url = self._endpoint(f"posts/slug/{quote(slug, safe='')}/")
+        with httpx.Client(timeout=self.timeout_s) as client:
+            response = client.get(
+                url,
+                params={"key": self.content_key, "fields": fields},
             )
-        return out
+            response.raise_for_status()
+            payload = response.json()
+        try:
+            return self._post_from_payload(payload["posts"][0])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Ghost did not return a post for slug {slug!r}") from exc
 
     def paginate_posts(
         self,
@@ -109,7 +128,7 @@ class GhostContentClient:
 
 
 class GhostAdminClient:
-    """Authenticated client for creating Ghost drafts and uploading their images."""
+    """Authenticated client for creating and updating Ghost posts and their images."""
 
     def __init__(self, base_url: str, admin_key: str, timeout_s: float = 20.0):
         self.base_url = base_url.rstrip("/")
@@ -196,3 +215,35 @@ class GhostAdminClient:
             return payload["posts"][0]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError("Ghost returned an invalid post creation response") from exc
+
+    def get_post(self, post_id: str) -> dict[str, Any]:
+        with httpx.Client(timeout=self.timeout_s) as client:
+            response = client.get(
+                self._endpoint(f"posts/{quote(post_id, safe='')}/"),
+                headers=self._headers(),
+                params={"formats": "html"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        try:
+            return payload["posts"][0]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Ghost returned an invalid post response for {post_id!r}") from exc
+
+    def update_post_html(self, post_id: str, *, html: str, updated_at: str) -> dict[str, Any]:
+        if not updated_at:
+            raise ValueError("Ghost post is missing updated_at; refusing an unsafe update")
+        post = {"html": html, "updated_at": updated_at}
+        with httpx.Client(timeout=self.timeout_s) as client:
+            response = client.put(
+                self._endpoint(f"posts/{quote(post_id, safe='')}/"),
+                headers=self._headers(),
+                params={"source": "html"},
+                json={"posts": [post]},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        try:
+            return payload["posts"][0]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Ghost returned an invalid update response for {post_id!r}") from exc

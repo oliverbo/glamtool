@@ -22,6 +22,7 @@ The goal is to provide a clean, scriptable foundation for automation without tur
 - Export posts to CSV
 - Export posts to Markdown
 - Publish Markdown files as Ghost drafts
+- Repair broken embedded images in WordPress-migrated Ghost posts
 - Sanity check API connectivity
 - Clean CLI built with Typer
 - Pretty terminal output via Rich
@@ -79,7 +80,7 @@ You can generate a Content API key in Ghost Admin under:
 Settings → Integrations → Custom Integration
 
 The Admin API key is only required for the `publish` command. Keep it private: it can create
-and modify content in Ghost.
+and modify content in Ghost. It is also required by `repair-post-images`.
 
 The glamglare API settings are only required for Instagram roll-call exports. The client uses
 the `glamtool` API-client ID and sends `GG_API_SECRET` through the API's `ApiKey` authentication
@@ -118,6 +119,25 @@ Confirms:
 - `.env` is loaded
 - API key works
 - Ghost is reachable
+
+---
+
+### repair-post-images
+
+Repair broken WordPress image variants embedded in a single Ghost post:
+
+```bash
+glamtool repair-post-images https://your-site.com/path/to/post/
+```
+
+The command resolves the public post URL, checks every URL in its embedded `img` tags, and
+updates the post through the Ghost Admin API. When a migrated WordPress size variant such as
+`photo-1024x742.jpg` is missing but `photo.jpg` exists, it uses the verified original. Broken
+`srcset` candidates are removed, along with `sizes` when no responsive candidates remain.
+
+The command preserves unrelated markup, leaves valid images unchanged, and prints a summary.
+If any image has no verified working source, it exits without updating the post. Both
+`GHOST_CONTENT_KEY` and `GHOST_ADMIN_KEY` must be configured.
 
 ---
 
