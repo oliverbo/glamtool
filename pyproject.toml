@@ -6,13 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
-    "markdown-it-py>=4.0.0",
     "pyjwt>=2.10.1",
     "pydantic-settings>=2.13.1",
-    "pyyaml>=6.0.3",
     "python-dotenv>=1.2.1",
     "rich>=14.3.3",
     "typer>=0.24.0",
+    "writer-md",
 ]
 
 [project.scripts]
@@ -22,6 +21,10 @@ glamtool = "glamtool.cli:main"
 dev = [
     "pytest>=8.4.2",
 ]
+
+[tool.uv.sources]
+# Pin shared Markdown behavior so upgrades remain explicit and reviewable.
+writer-md = { git = "https://github.com/oliverbo/writer-md", tag = "v0.1.0" }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
