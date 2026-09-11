@@ -128,6 +128,14 @@ def test_non_annotation_trailing_blocks_are_preserved(tmp_path, suffix):
     assert "---" in post.markdown
 
 
+def test_writer_md_errors_are_reported_as_publishing_errors(tmp_path):
+    source = tmp_path / "post.md"
+    source.write_text("---\ntags: [news\n---\n# Title\n", encoding="utf-8")
+
+    with pytest.raises(PublishingError, match="front matter is not valid YAML"):
+        prepare_post(source)
+
+
 def test_nested_content_block_images_are_resolved_from_the_included_file(tmp_path):
     parts = tmp_path / "parts"
     parts.mkdir()
