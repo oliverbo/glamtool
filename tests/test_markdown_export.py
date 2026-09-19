@@ -247,8 +247,9 @@ def test_export_markdown_instagram_reports_all_unresolved_posts_without_writing(
     )
 
     assert result.exit_code == 1
-    assert "Bad title" in result.output
-    assert "artist 'Unknown' was not found" in result.output
+    assert result.stdout == ""
+    assert "Bad title" in result.stderr
+    assert "artist 'Unknown' was not found" in result.stderr
     assert not out.exists()
 
 
@@ -270,7 +271,8 @@ def test_publish_command_creates_a_draft(monkeypatch, tmp_path):
     result = runner.invoke(cli.app, ["publish", str(source)])
 
     assert result.exit_code == 0, result.output
-    assert "Created Ghost draft: Draft title" in result.output
+    assert result.stderr == ""
+    assert "Created Ghost draft: Draft title" in result.stdout
     assert "ID: draft-id" in result.output
     assert seen == {
         "title": "Draft title",
@@ -327,4 +329,20 @@ def test_publish_command_requires_an_admin_key(monkeypatch, tmp_path):
     result = runner.invoke(cli.app, ["publish", str(source)])
 
     assert result.exit_code == 1
-    assert "GHOST_ADMIN_KEY is required" in result.output
+    assert result.stdout == ""
+    assert "GHOST_ADMIN_KEY is required" in result.stderr
+
+
+def test_sanity_reports_api_errors_to_stderr(monkeypatch):
+    class FakeGhostClient:
+        def list_posts(self, **kwargs):
+            raise RuntimeError("Connection failed")
+
+    monkeypatch.setattr(cli, "ghost_client", FakeGhostClient)
+
+    result = runner.invoke(cli.app, ["sanity"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Ghost API call failed:" in result.stderr
+    assert "Connection failed" in result.stderr

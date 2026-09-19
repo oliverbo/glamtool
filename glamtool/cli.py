@@ -24,6 +24,7 @@ from .publisher import PublishingError, prepare_post
 
 app = typer.Typer(add_completion=False, help="Maintenance utilities for Ghost + APIs.")
 console = Console()
+error_console = Console(stderr=True)
 MARKDOWN_POST_FIELDS = "id,title,status,published_at,url,slug,html"
 
 
@@ -498,7 +499,7 @@ def export_markdown(
         else:
             markdown = render_markdown_posts(posts, format_)
     except (GlamglareApiError, InstagramRollCallError, httpx.HTTPError) as exc:
-        console.print(f"[red]Could not generate Instagram roll call:[/red] {exc}")
+        error_console.print(f"[red]Could not generate Instagram roll call:[/red] {exc}")
         raise typer.Exit(code=1)
 
     if out:
@@ -553,7 +554,7 @@ def publish_markdown(
             feature_image_caption=feature_image_caption,
         )
     except (PublishingError, ValueError, OSError, httpx.HTTPError) as exc:
-        console.print(f"[red]Could not create Ghost draft:[/red] {exc}")
+        error_console.print(f"[red]Could not create Ghost draft:[/red] {exc}")
         raise typer.Exit(code=1)
 
     console.print(f"[green]Created Ghost draft:[/green] {post.get('title', prepared.title)}")
@@ -617,7 +618,7 @@ def repair_post_images_command(
             updated_at=current_post.get("updated_at", ""),
         )
     except (ImageRepairError, PublishingError, ValueError, httpx.HTTPError) as exc:
-        console.print(f"[red]Could not repair post images:[/red] {exc}")
+        error_console.print(f"[red]Could not repair post images:[/red] {exc}")
         raise typer.Exit(code=1)
 
     console.print(
@@ -634,7 +635,7 @@ def sanity():
     try:
         items = client.list_posts(limit=1)
     except Exception as e:
-        console.print(f"[red]❌ Ghost API call failed:[/red] {e}")
+        error_console.print(f"[red]❌ Ghost API call failed:[/red] {e}")
         raise typer.Exit(code=1)
 
     console.print("[green]✅ Ghost API call works.[/green]")

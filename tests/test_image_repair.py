@@ -248,4 +248,7 @@ def test_repair_post_images_command_does_not_save_unresolved_images(monkeypatch)
 
     assert result.exit_code == 1
     assert "1 still broken" in result.output
-    assert "the post was not updated" in result.output
+    assert "Could not repair post images:" not in result.stdout
+    assert "the post was not updated" not in result.stdout
+    assert "Could not repair post images:" in result.stderr
+    assert "the post was not updated" in result.stderr
