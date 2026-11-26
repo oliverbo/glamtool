@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -23,6 +23,8 @@ class GhostPost:
     html: Optional[str] = None
     feature_image_alt: Optional[str] = None
     feature_image_caption: Optional[str] = None
+    authors: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
 
 class GhostContentClient:
@@ -53,6 +55,8 @@ class GhostContentClient:
             html=post.get("html"),
             feature_image_alt=post.get("feature_image_alt"),
             feature_image_caption=post.get("feature_image_caption"),
+            authors=[author["name"] for author in (post.get("authors") or []) if author.get("name")],
+            tags=[tag["name"] for tag in (post.get("tags") or []) if tag.get("name")],
         )
 
     def list_posts(

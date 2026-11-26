@@ -27,11 +27,8 @@ def export_post(post: GhostPost, output: Path, client: httpx.Client) -> Path:
     """Save a post atomically, including every embedded image variant."""
     if post.html is None:
         raise ExportError("Post HTML is missing")
-    folder = f"{normalize_name((post.published_at or 'undated')[:10])}-{normalize_name(post.slug or post.title)}-{normalize_name(post.id)}"
+    folder = f"{normalize_name((post.published_at or 'undated')[:10])}-{normalize_name(post.title or post.slug or 'untitled')}"
     output.mkdir(parents=True, exist_ok=True)
-    destination = output / folder
-    if destination.exists():
-        raise ExportError(f"Export already exists: {destination}")
 
     with tempfile.TemporaryDirectory(prefix=".glamtool-", dir=output) as temporary:
         root = Path(temporary)
@@ -91,11 +88,18 @@ def export_post(post: GhostPost, output: Path, client: httpx.Client) -> Path:
         body = re.sub(r"[ \t]+\n", "\n", body)
         body = re.sub(r"\n{3,}", "\n\n", body).strip()
         title = (post.title or "(untitled)").replace("\n", " ")
-        sections = [f"# {title}"]
-        if post.published_at:
-            sections.append(f"Published: {post.published_at}")
-        if post.url:
-            sections.append(f"Original: {post.url}")
+        metadata = {
+            "published": post.published_at,
+            "url": post.url,
+            "authors": post.authors,
+            "tags": post.tags,
+        }
+        # JSON scalars and arrays are valid YAML and safely quote arbitrary names.
+        front_matter = "---\n" + "\n".join(
+            f"{key}: {json.dumps(value, ensure_ascii=False)}"
+            for key, value in metadata.items()
+        ) + "\n---"
+        sections = [front_matter, f"# {title}"]
         if feature_image:
             alt = (post.feature_image_alt or "").replace("\\", "\\\\").replace("]", "\\]")
             sections.append(f"![{alt}]({feature_image})")
@@ -107,8 +111,10 @@ def export_post(post: GhostPost, output: Path, client: httpx.Client) -> Path:
         (root / "images.json").write_text(
             json.dumps(downloaded, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        # Recheck so an existing backup is never replaced.
-        if destination.exists():
-            raise ExportError(f"Export already exists: {destination}")
+        destination = output / folder
+        suffix = 0
+        while destination.exists() or destination.is_symlink():
+            suffix += 1
+            destination = output / f"{folder}-{suffix}"
         root.rename(destination)
     return destination
