@@ -401,7 +401,7 @@ def export_full_posts(
     )
     try:
         items = ghost_client().paginate_posts(
-            filter_=filter_, fields=MARKDOWN_POST_FIELDS + ",feature_image,feature_image_alt,feature_image_caption",
+            filter_=filter_, fields=MARKDOWN_POST_FIELDS + ",updated_at,feature_image,feature_image_alt,feature_image_caption",
             order="published_at asc,id asc", count=count,
             max_pages=(count + 99) // 100,
         )

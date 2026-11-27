@@ -416,7 +416,7 @@ It uses the Content API; drafts and content unavailable through that API are not
 
 Each post receives a new `DATE-TITLE` folder containing `post.md`, an `images/` folder
 when images exist, and `images.json` mapping original image URLs to local files.
-Markdown includes YAML front matter with `published`, `url`, `authors` (author names),
+Markdown includes YAML front matter with `published`, `updated` (last-updated timestamp), `url`, `authors` (author names),
 and `tags` (tag names), followed by the title, feature image, and body. Missing dates
 and URLs are written as `null`; missing authors and tags are empty lists.
 Feature and embedded images use normalized names such as `feature.jpg` and

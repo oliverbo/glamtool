@@ -100,6 +100,7 @@ def test_command_filters_and_continues_after_failure(monkeypatch, tmp_path, post
     assert seen["filter_"] == "status:published+tag:music+published_at:>='2026-01-01'"
     assert seen["order"] == "published_at asc,id asc"
     assert "feature_image" in seen["fields"]
+    assert "updated_at" in seen["fields"]
     assert len(list(tmp_path.iterdir())) == 1
 
 
@@ -143,12 +144,13 @@ def test_front_matter_preserves_metadata_and_special_characters(post, tmp_path):
     from writer_md import split_front_matter
 
     post = replace(post, html="<p>Body</p>", feature_image=None,
+                   updated_at="2026-11-27T09:30:00.000Z",
                    authors=['Alice: Editor', 'Björk "B"'], tags=['Music', 'yes', '#news'])
     with httpx.Client() as client:
         folder = export_post(post, tmp_path, client)
     text = (folder / "post.md").read_text()
     metadata, body = split_front_matter(text, source=folder / "post.md")
-    assert metadata == {"published": post.published_at, "url": post.url,
+    assert metadata == {"published": post.published_at, "updated": post.updated_at, "url": post.url,
                         "authors": post.authors, "tags": post.tags}
     assert body.strip() == "# A title\n\nBody"
     assert "Published:" not in body
@@ -157,9 +159,11 @@ def test_front_matter_preserves_metadata_and_special_characters(post, tmp_path):
 
 def test_ghost_payload_retains_author_and_tag_names():
     post = GhostContentClient._post_from_payload({
-        "id": "1", "authors": [{"name": "Alice", "slug": "alice"}, {"name": "Bob"}],
+        "id": "1", "updated_at": "2026-11-27T09:30:00.000Z", "authors": [{"name": "Alice", "slug": "alice"}, {"name": "Bob"}],
         "tags": [{"name": "Music", "slug": "music"}],
     })
+    assert post.updated_at == "2026-11-27T09:30:00.000Z"
+    assert GhostContentClient._post_from_payload({"id": "2"}).updated_at is None
     assert post.authors == ["Alice", "Bob"]
     assert post.tags == ["Music"]
     assert GhostContentClient._post_from_payload({"id": "2"}).authors == []
@@ -171,4 +175,4 @@ def test_missing_metadata_exports_nulls_and_empty_lists(post, tmp_path):
     with httpx.Client() as client:
         folder = export_post(post, tmp_path, client)
     text = (folder / "post.md").read_text()
-    assert text.startswith('---\npublished: null\nurl: null\nauthors: []\ntags: []\n---\n')
+    assert text.startswith('---\npublished: null\nupdated: null\nurl: null\nauthors: []\ntags: []\n---\n')

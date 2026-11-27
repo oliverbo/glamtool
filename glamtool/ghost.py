@@ -25,6 +25,7 @@ class GhostPost:
     feature_image_caption: Optional[str] = None
     authors: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    updated_at: Optional[str] = None
 
 
 class GhostContentClient:
@@ -49,6 +50,7 @@ class GhostContentClient:
             title=post.get("title"),
             status=post.get("status"),
             published_at=post.get("published_at"),
+            updated_at=post.get("updated_at"),
             url=post.get("url"),
             feature_image=post.get("feature_image"),
             slug=post.get("slug"),

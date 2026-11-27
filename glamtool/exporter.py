@@ -90,6 +90,7 @@ def export_post(post: GhostPost, output: Path, client: httpx.Client) -> Path:
         title = (post.title or "(untitled)").replace("\n", " ")
         metadata = {
             "published": post.published_at,
+            "updated": post.updated_at,
             "url": post.url,
             "authors": post.authors,
             "tags": post.tags,
