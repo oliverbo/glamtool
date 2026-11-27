@@ -410,16 +410,18 @@ def export_full_posts(
         raise typer.Exit(code=1)
     failed = 0
     exported = 0
+    overwritten = 0
     with httpx.Client(timeout=20.0, follow_redirects=True, base_url=settings.ghost_url) as client:
         for post in items:
             try:
-                destination = export_post(post, out, client)
-                console.print(f"Exported {post.title} to {destination}")
+                result = export_post(post, out, client)
+                overwritten += int(result.overwritten)
+                console.print(f"Exported {post.title} to {result.path}")
                 exported += 1
             except (ExportError, ValueError, OSError, httpx.HTTPError) as exc:
                 failed += 1
                 error_console.print(f"Could not export {post.title} ({post.id}): {exc}")
-    console.print(f"Exported {exported} post(s); {failed} failed.")
+    console.print(f"Exported {exported} post(s); {overwritten} overwritten; {failed} failed.")
     if failed:
         raise typer.Exit(code=1)
 

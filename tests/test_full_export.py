@@ -31,7 +31,7 @@ def test_localizes_all_images_and_deduplicates(post, tmp_path):
         return httpx.Response(200, headers={"Content-Type": kind}, content=b"image")
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-        folder = export_post(post, tmp_path, client)
+        folder = export_post(post, tmp_path, client).path
     assert folder.name == "2026-01-01-a-title"
     markdown = (folder / "post.md").read_text()
     assert "# A title" in markdown
@@ -59,11 +59,12 @@ def test_failed_download_leaves_no_partial_folder(post, tmp_path, status, media,
 def test_existing_backup_is_preserved_and_missing_html_fails(post, tmp_path):
     post = replace(post, feature_image=None, html="")
     with httpx.Client() as client:
-        folder = export_post(post, tmp_path, client)
-        second = export_post(post, tmp_path, client)
-        third = export_post(post, tmp_path, client)
-        assert second.name == folder.name + "-1"
-        assert third.name == folder.name + "-2"
+        folder = export_post(post, tmp_path, client).path
+        second = export_post(post, tmp_path, client).path
+        third = export_post(post, tmp_path, client).path
+        assert second == folder
+        assert third == folder
+        assert list(tmp_path.iterdir()) == [folder]
         assert (second / "post.md").read_bytes() == (folder / "post.md").read_bytes()
         with pytest.raises(ExportError, match="HTML is missing"):
             export_post(replace(post, html=None), tmp_path, client)
@@ -95,7 +96,7 @@ def test_command_filters_and_continues_after_failure(monkeypatch, tmp_path, post
     result = CliRunner().invoke(cli.app, ["export-full-posts", "--start-date", "2026-01-01",
         "--count", "2", "--tag", "music", "--out", str(tmp_path)])
     assert result.exit_code == 1, result.output
-    assert "Exported 1 post(s); 1 failed" in result.stdout
+    assert "Exported 1 post(s); 0 overwritten; 1 failed" in result.stdout
     assert seen["count"] == 2
     assert seen["filter_"] == "status:published+tag:music+published_at:>='2026-01-01'"
     assert seen["order"] == "published_at asc,id asc"
@@ -121,7 +122,7 @@ def test_feature_metadata_and_video_sources(post, tmp_path):
         return httpx.Response(200, headers={"Content-Type": "image/jpeg"}, content=b"image")
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-        folder = export_post(post, tmp_path, client)
+        folder = export_post(post, tmp_path, client).path
     text = (folder / "post.md").read_text()
     assert "![Cover \\] text](images/feature.jpg)" in text
     assert "**Credit**" in text
@@ -136,7 +137,7 @@ def test_no_matches_is_success(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "ghost_client", Client)
     result = CliRunner().invoke(cli.app, ["export-full-posts", "--out", str(tmp_path / "backup")])
     assert result.exit_code == 0
-    assert "Exported 0 post(s); 0 failed" in result.stdout
+    assert "Exported 0 post(s); 0 overwritten; 0 failed" in result.stdout
     assert not (tmp_path / "backup").exists()
 
 
@@ -147,7 +148,7 @@ def test_front_matter_preserves_metadata_and_special_characters(post, tmp_path):
                    updated_at="2026-11-27T09:30:00.000Z",
                    authors=['Alice: Editor', 'Björk "B"'], tags=['Music', 'yes', '#news'])
     with httpx.Client() as client:
-        folder = export_post(post, tmp_path, client)
+        folder = export_post(post, tmp_path, client).path
     text = (folder / "post.md").read_text()
     metadata, body = split_front_matter(text, source=folder / "post.md")
     assert metadata == {"published": post.published_at, "updated": post.updated_at, "url": post.url,
@@ -173,6 +174,44 @@ def test_ghost_payload_retains_author_and_tag_names():
 def test_missing_metadata_exports_nulls_and_empty_lists(post, tmp_path):
     post = replace(post, html="", feature_image=None, published_at=None, url=None)
     with httpx.Client() as client:
-        folder = export_post(post, tmp_path, client)
+        folder = export_post(post, tmp_path, client).path
     text = (folder / "post.md").read_text()
     assert text.startswith('---\npublished: null\nupdated: null\nurl: null\nauthors: []\ntags: []\n---\n')
+
+
+def test_refresh_removes_stale_files_and_reports_overwrite(post, tmp_path):
+    post = replace(post, feature_image=None, html="<p>Old</p>")
+    with httpx.Client() as client:
+        first = export_post(post, tmp_path, client)
+        assert not first.overwritten
+        (first.path / "stale.txt").write_text("obsolete")
+        refreshed = export_post(replace(post, html="<p>New</p>"), tmp_path, client)
+    assert refreshed.overwritten
+    assert refreshed.path == first.path
+    assert not (first.path / "stale.txt").exists()
+    assert "New" in (first.path / "post.md").read_text()
+    assert list(tmp_path.iterdir()) == [first.path]
+
+
+def test_failed_refresh_preserves_existing_backup(post, tmp_path):
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(404))) as client:
+        first = export_post(replace(post, feature_image=None, html="Old body"), tmp_path, client)
+        with pytest.raises(httpx.HTTPError):
+            export_post(post, tmp_path, client)
+    assert "Old body" in (first.path / "post.md").read_text()
+    assert list(tmp_path.iterdir()) == [first.path]
+
+
+def test_command_counts_successful_overwrites(monkeypatch, post, tmp_path):
+    existing = replace(post, html="Old", feature_image=None)
+    with httpx.Client() as client:
+        export_post(existing, tmp_path, client)
+
+    class Client:
+        def paginate_posts(self, **kwargs):
+            return [replace(existing, html="New"), replace(existing, title="Another post")]
+
+    monkeypatch.setattr(cli, "ghost_client", Client)
+    result = CliRunner().invoke(cli.app, ["export-full-posts", "--count", "2", "--out", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "Exported 2 post(s); 1 overwritten; 0 failed." in result.stdout

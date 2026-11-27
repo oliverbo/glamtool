@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import shutil
+from dataclasses import dataclass
 import tempfile
 import unicodedata
 from pathlib import Path
@@ -23,8 +25,14 @@ def normalize_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:80] or "post"
 
 
-def export_post(post: GhostPost, output: Path, client: httpx.Client) -> Path:
-    """Save a post atomically, including every embedded image variant."""
+@dataclass(frozen=True)
+class ExportResult:
+    path: Path
+    overwritten: bool
+
+
+def export_post(post: GhostPost, output: Path, client: httpx.Client) -> ExportResult:
+    """Prepare a complete post before replacing any existing backup."""
     if post.html is None:
         raise ExportError("Post HTML is missing")
     folder = f"{normalize_name((post.published_at or 'undated')[:10])}-{normalize_name(post.title or post.slug or 'untitled')}"
@@ -113,9 +121,10 @@ def export_post(post: GhostPost, output: Path, client: httpx.Client) -> Path:
             json.dumps(downloaded, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         destination = output / folder
-        suffix = 0
-        while destination.exists() or destination.is_symlink():
-            suffix += 1
-            destination = output / f"{folder}-{suffix}"
+        overwritten = destination.is_dir() and not destination.is_symlink()
+        if destination.exists() or destination.is_symlink():
+            if not overwritten:
+                raise ExportError(f"Export destination is not a directory: {destination}")
+            shutil.rmtree(destination)
         root.rename(destination)
-    return destination
+    return ExportResult(destination, overwritten)

@@ -414,7 +414,7 @@ first (default: one post). It supports repeatable `--tag`, `--any-tag`, `--filte
 `--end-date` (inclusive), and `--week`, using the same date rules as `export-markdown`.
 It uses the Content API; drafts and content unavailable through that API are not included.
 
-Each post receives a new `DATE-TITLE` folder containing `post.md`, an `images/` folder
+Each post is saved in a `DATE-TITLE` folder containing `post.md`, an `images/` folder
 when images exist, and `images.json` mapping original image URLs to local files.
 Markdown includes YAML front matter with `published`, `updated` (last-updated timestamp), `url`, `authors` (author names),
 and `tags` (tag names), followed by the title, feature image, and body. Missing dates
@@ -425,8 +425,8 @@ URLs are downloaded once per post. Responsive image variants are also saved and 
 in `images.json`; Markdown displays the image's primary source. Captions and alternative
 text are retained, and YouTube embeds remain links. Videos and linked pages are not downloaded.
 
-Existing post folders are never overwritten: name clashes receive `-1`, `-2`, and so on.
-A post folder is finalized only after all
-its images download successfully. Failed posts leave no partial backup; other selected
+Existing post folders are refreshed in place: their previous contents are deleted and
+replaced after the new export and all images are ready. Failed downloads preserve the
+existing backup. The status summary includes how many posts were overwritten. Failed posts leave no partial backup; other selected
 posts continue, and any failure produces a nonzero exit status. Fewer available posts
 than requested (including no matches) is a successful result.
