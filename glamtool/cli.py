@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import csv
 import re
-from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
 from html import escape as escape_html
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from .markdown import html_to_markdown
+from .exporter import ExportError, export_post
 from .config import settings
 from .glamglare import GlamglareApiError, GlamglareArtist, GlamglareClient
 from .ghost import GhostAdminClient, GhostContentClient
@@ -37,49 +37,6 @@ class MarkdownFormat(str, Enum):
 class InstagramRollCallError(ValueError):
     """Raised when one or more Song Picks cannot be rendered as a roll call."""
 
-
-@dataclass
-class HtmlNode:
-    tag: str
-    attrs: dict[str, str] = field(default_factory=dict)
-    children: list["HtmlNode | str"] = field(default_factory=list)
-
-
-class GhostHtmlParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.root = HtmlNode("root")
-        self.stack = [self.root]
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]):
-        node = HtmlNode(tag.lower(), {k.lower(): v or "" for k, v in attrs})
-        self.stack[-1].children.append(node)
-        if node.tag not in {
-            "area",
-            "base",
-            "br",
-            "col",
-            "embed",
-            "hr",
-            "img",
-            "input",
-            "link",
-            "meta",
-            "source",
-            "track",
-            "wbr",
-        }:
-            self.stack.append(node)
-
-    def handle_endtag(self, tag: str):
-        tag = tag.lower()
-        for idx in range(len(self.stack) - 1, 0, -1):
-            if self.stack[idx].tag == tag:
-                del self.stack[idx:]
-                break
-
-    def handle_data(self, data: str):
-        self.stack[-1].children.append(data)
 
 
 def ghost_client() -> GhostContentClient:
@@ -187,93 +144,6 @@ def build_published_at_filter(
 def combine_filters(*filters: Optional[str]) -> Optional[str]:
     parts = [filter_.strip() for filter_ in filters if filter_ and filter_.strip()]
     return "+".join(parts) or None
-
-
-def normalize_youtube_url(src: str) -> str:
-    parsed = urlparse(src)
-    host = parsed.netloc.lower()
-    if host.endswith("youtube.com") and parsed.path.startswith("/embed/"):
-        video_id = parsed.path.removeprefix("/embed/").split("/")[0]
-        if video_id:
-            return f"https://www.youtube.com/watch?v={video_id}"
-    if host.endswith("youtube.com") and parsed.path == "/watch":
-        video_id = parse_qs(parsed.query).get("v", [""])[0]
-        if video_id:
-            return f"https://www.youtube.com/watch?v={video_id}"
-    if host.endswith("youtu.be"):
-        video_id = parsed.path.strip("/").split("/")[0]
-        if video_id:
-            return f"https://youtu.be/{video_id}"
-    return src
-
-
-def html_to_markdown(html: Optional[str]) -> str:
-    if not html:
-        return ""
-    parser = GhostHtmlParser()
-    parser.feed(html)
-    parser.close()
-    markdown = render_html_node(parser.root)
-    markdown = re.sub(r"[ \t]+\n", "\n", markdown)
-    markdown = re.sub(r"\n{3,}", "\n\n", markdown)
-    markdown = "\n".join(line.strip() for line in markdown.splitlines())
-    return markdown.strip()
-
-
-def render_html_children(node: HtmlNode) -> str:
-    return "".join(render_html_node(child) for child in node.children)
-
-
-def render_html_node(node: HtmlNode | str) -> str:
-    if isinstance(node, str):
-        return node
-
-    tag = node.tag
-    content = render_html_children(node)
-
-    if tag in {"root", "html", "body", "article", "section"}:
-        return content
-    if tag in {"p", "div", "figure"}:
-        return f"{content.strip()}\n\n" if content.strip() else ""
-    if tag in {"strong", "b"}:
-        return f"**{content.strip()}**"
-    if tag in {"em", "i"}:
-        return f"*{content.strip()}*"
-    if tag == "br":
-        return "\n"
-    if tag == "hr":
-        return "\n---\n\n"
-    if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
-        level = int(tag[1])
-        return f"{'#' * level} {content.strip()}\n\n"
-    if tag == "blockquote":
-        lines = content.strip().splitlines()
-        quoted = "\n".join(f"> {line.strip()}" if line.strip() else ">" for line in lines)
-        return f"{quoted}\n\n" if quoted else ""
-    if tag == "a":
-        href = node.attrs.get("href", "").strip()
-        label = content.strip() or href
-        return f"[{label}]({href})" if href else label
-    if tag in {"iframe", "embed"}:
-        src = node.attrs.get("src", "").strip()
-        return f"\n{normalize_youtube_url(src)}\n\n" if src else ""
-    if tag == "img":
-        src = node.attrs.get("src", "").strip()
-        alt = node.attrs.get("alt", "").strip()
-        return f"![{alt}]({src})" if src else alt
-    if tag in {"ul", "ol"}:
-        ordered = tag == "ol"
-        items = [child for child in node.children if isinstance(child, HtmlNode) and child.tag == "li"]
-        lines = []
-        for index, item in enumerate(items, start=1):
-            bullet = f"{index}." if ordered else "-"
-            lines.append(f"{bullet} {render_html_children(item).strip()}")
-        return "\n".join(lines) + ("\n\n" if lines else "")
-    if tag == "li":
-        return content
-    if tag in {"script", "style"}:
-        return ""
-    return content
 
 
 def render_markdown_posts(posts, format_: MarkdownFormat) -> str:
@@ -511,6 +381,49 @@ def export_markdown(
         return
 
     console.out(markdown, end="")
+
+
+@app.command("export-full-posts")
+def export_full_posts(
+    out: Path = typer.Option(Path("backups"), help="Parent directory for post folders."),
+    count: int = typer.Option(1, min=1, help="Maximum number of matching posts to export."),
+    start_date: Optional[str] = typer.Option(None, help="Include posts on or after YYYY-MM-DD."),
+    end_date: Optional[str] = typer.Option(None, help="Include posts on or before YYYY-MM-DD."),
+    week: Optional[str] = typer.Option(None, help="Seven days starting with YYYY-MM-DD."),
+    tag: Optional[list[str]] = typer.Option(None, "--tag", help="Filter by tag (repeatable)."),
+    any_tag: bool = typer.Option(False, help="Match any supplied tag."),
+    filter: Optional[str] = typer.Option(None, "--filter", help="Additional Ghost filter."),
+):
+    """Back up published posts as Markdown with local images."""
+    filter_ = combine_filters(
+        build_filter(True, False, tag, any_tag, filter),
+        build_published_at_filter(start_date, end_date, week),
+    )
+    try:
+        items = ghost_client().paginate_posts(
+            filter_=filter_, fields=MARKDOWN_POST_FIELDS + ",updated_at,feature_image,feature_image_alt,feature_image_caption",
+            order="published_at asc,id asc", count=count,
+            max_pages=(count + 99) // 100,
+        )
+    except (ValueError, httpx.HTTPError) as exc:
+        error_console.print(f"Could not fetch posts: {exc}")
+        raise typer.Exit(code=1)
+    failed = 0
+    exported = 0
+    overwritten = 0
+    with httpx.Client(timeout=20.0, follow_redirects=True, base_url=settings.ghost_url) as client:
+        for post in items:
+            try:
+                result = export_post(post, out, client)
+                overwritten += int(result.overwritten)
+                console.print(f"Exported {post.title} to {result.path}")
+                exported += 1
+            except (ExportError, ValueError, OSError, httpx.HTTPError) as exc:
+                failed += 1
+                error_console.print(f"Could not export {post.title} ({post.id}): {exc}")
+    console.print(f"Exported {exported} post(s); {overwritten} overwritten; {failed} failed.")
+    if failed:
+        raise typer.Exit(code=1)
 
 
 @app.command("publish")

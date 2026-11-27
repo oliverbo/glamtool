@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -21,6 +21,11 @@ class GhostPost:
     feature_image: Optional[str]
     slug: Optional[str]
     html: Optional[str] = None
+    feature_image_alt: Optional[str] = None
+    feature_image_caption: Optional[str] = None
+    authors: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    updated_at: Optional[str] = None
 
 
 class GhostContentClient:
@@ -45,10 +50,15 @@ class GhostContentClient:
             title=post.get("title"),
             status=post.get("status"),
             published_at=post.get("published_at"),
+            updated_at=post.get("updated_at"),
             url=post.get("url"),
             feature_image=post.get("feature_image"),
             slug=post.get("slug"),
             html=post.get("html"),
+            feature_image_alt=post.get("feature_image_alt"),
+            feature_image_caption=post.get("feature_image_caption"),
+            authors=[author["name"] for author in (post.get("authors") or []) if author.get("name")],
+            tags=[tag["name"] for tag in (post.get("tags") or []) if tag.get("name")],
         )
 
     def list_posts(
@@ -108,7 +118,11 @@ class GhostContentClient:
         filter_: Optional[str] = None,
         order: Optional[str] = None,
         max_pages: int = 50,
+        count: Optional[int] = None,
     ) -> List[GhostPost]:
+        if count is not None and count < 1:
+            raise ValueError("count must be positive")
+        per_page = min(max(per_page, 1), 100)
         all_posts: List[GhostPost] = []
         for page in range(1, max_pages + 1):
             batch = self.list_posts(
@@ -122,6 +136,8 @@ class GhostContentClient:
             if not batch:
                 break
             all_posts.extend(batch)
+            if count is not None and len(all_posts) >= count:
+                return all_posts[:count]
             if len(batch) < per_page:
                 break
         return all_posts
